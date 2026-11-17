@@ -871,10 +871,6 @@ const PANEL_CSS = `
   background: #f9f9fb; color: #15141a; font: 13px/1.3 system-ui, sans-serif;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .3); user-select: none;
 }
-@media (prefers-color-scheme: dark) {
-  .bar { background: #2b2a33; color: #fbfbfe; border-color: #5b5b66; }
-  button, select { background: #42414d; color: #fbfbfe; border-color: #5b5b66; }
-}
 button, select {
   font: inherit; margin: 0; padding: 3px 7px; border: 1px solid #c4c4c9;
   border-radius: 4px; background: #fff; color: inherit; cursor: pointer;
@@ -886,7 +882,13 @@ select { max-width: 9em; padding: 2px; }
 .speed { display: flex; align-items: center; gap: 3px; }
 input[type=range] { width: 80px; margin: 0; }
 .val { min-width: 2.2em; text-align: end; font-variant-numeric: tabular-nums; opacity: .8; }
-.close { border: none; background: none; padding: 2px 5px; opacity: .7; }
+.close { border: none; background: none; padding: 2px 5px; opacity: .7; }/* after the rules above: the same selectors, so the later rule wins */
+@media (prefers-color-scheme: dark) {
+  .bar { background: #2b2a33; color: #fbfbfe; border-color: #5b5b66; }
+  button, select { background: #42414d; color: #fbfbfe; border-color: #5b5b66; }
+  option { background: #2b2a33; color: #fbfbfe; }
+  .close { background: none; }
+}
 `;
 
 function msg(name) {
