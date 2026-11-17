@@ -242,19 +242,45 @@ let langOverride = null;          // set from the popup for this page
 let siteCorrections = {};          // detected -> corrected, per site
 
 /*
+ * Letters only one Cyrillic language has: they tell the language even in a
+ * short headline ("главные новости"), where Firefox's detector can't.
+ * Null when there are none, or the letters of two languages are mixed.
+ * Not ъ: Bulgarian uses it far more than Russian.
+ */
+const CYRILLIC_LETTERS = [
+  ["be", /[ўЎ]/],
+  ["uk", /[їЇєЄґҐ]/],
+  ["sr", /[ђЂћЋџЏљЉњЊ]/],
+  ["mk", /[ѓЃќЌѕЅ]/],
+  ["ru", /[ыЫэЭёЁ]/],
+];
+
+function cyrillicHint(text) {
+  const found = CYRILLIC_LETTERS.filter(([, re]) => re.test(text)).map(([l]) => l);
+  // Belarusian also has і, ы, э and ё
+  if (found.includes("be"))
+    return found.every((l) => l === "be" || l === "ru") ? "be" : null;
+  if (/[іІ]/.test(text) && found.includes("ru"))
+    return found.length === 1 ? "be" : null;
+  if (!found.length && /[іІ]/.test(text) && /[а-яА-Я]/.test(text))
+    return "uk";
+  return found.length === 1 ? found[0] : null;
+}
+
+/*
  * @loose: also an unreliable answer when one language has at least half the
  * text. For the whole text to read: headlines, dates and names mixed in
  * (opennet.ru: "ru 57%, sr 18%") make it unreliable, yet clear enough.
  */
 async function detect(text, loose = false) {
   if (!browser.i18n.detectLanguage || text.length < 30)
-    return null;
+    return cyrillicHint(text);
   try {
     const r = await browser.i18n.detectLanguage(text.slice(0, 2000));
     const best = r.languages.find((l) => l.language !== "und");
-    if (!best)
-      return null;
-    return r.isReliable || (loose && best.percentage >= 50) ? best.language : null;
+    if (best && (r.isReliable || (loose && best.percentage >= 50)))
+      return best.language;
+    return cyrillicHint(text);
   } catch (e) {
     return null;
   }
