@@ -5,8 +5,9 @@ const $ = (id) => document.getElementById(id);
 let tab = null;
 // opened with 📌 as a window of its own: it acts on the active tab of the
 // browser window used last, and follows it
-const detached = new URLSearchParams(location.search).has("detached");
-let browserWindow = null;
+const params = new URLSearchParams(location.search);
+const detached = params.has("detached");
+let browserWindow = detached ? Number(params.get("window")) || null : null;
 
 document.documentElement.lang = browser.i18n.getUILanguage();
 for (const el of document.querySelectorAll("[data-i18n]"))
@@ -24,9 +25,13 @@ async function currentTab() {
     [tab] = await browser.tabs.query({active: true, currentWindow: true});
     return;
   }
-  if (browserWindow === null)
-    browserWindow = (await browser.windows.getLastFocused({windowTypes: ["normal"]})).id;
-  [tab] = await browser.tabs.query({active: true, windowId: browserWindow});
+  if (browserWindow !== null)
+    [tab] = await browser.tabs.query({active: true, windowId: browserWindow}).catch(() => []);
+  if (!tab) {     // that window was closed: take any browser window
+    const [w] = await browser.windows.getAll({windowTypes: ["normal"]});
+    browserWindow = w ? w.id : null;
+    [tab] = w ? await browser.tabs.query({active: true, windowId: w.id}) : [];
+  }
 }
 
 async function run(action, extra = {}) {
@@ -105,8 +110,10 @@ $("buttons").onchange = () => {
 };
 $("rate-default").onchange = saveRate;
 $("pin").onclick = () => {
-  browser.runtime.sendMessage({type: "detach"});
-  window.close();
+  browser.windows.getCurrent().then(async (w) => {
+    await browser.runtime.sendMessage({type: "detach", window: w.id});
+    window.close();
+  });
 };
 // without the right to every page, the window can act only on pages where
 // the extension was started already (activeTab)

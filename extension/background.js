@@ -132,11 +132,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   case "status":
     return Promise.resolve({speakingTab, lastError});
   case "detach":      // the popup's 📌: the same page as a window that stays
-    browser.windows.create({
-      url: browser.runtime.getURL("popup/popup.html?detached=1"),
+    return browser.windows.create({
+      url: browser.runtime.getURL("popup/popup.html?detached=1&window=" + Number(msg.window)),
       type: "popup", width: 300, height: 380,
-    });
-    return;
+    }).then(() => ({}));
   case "run":         // from the popup
     return runInTab(msg.tab, msg.action, {lang: msg.lang, on: msg.on});
   }
