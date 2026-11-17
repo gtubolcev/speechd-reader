@@ -105,7 +105,7 @@ $("allsites").onchange = () => {
   const want = $("allsites").checked;
   (want ? browser.permissions.request(ALL_SITES) : browser.permissions.remove(ALL_SITES))
     .then(async () => { $("allsites").checked = await browser.permissions.contains(ALL_SITES); })
-    .catch((e) => status(String(e.message || e), true));
+    .catch((e) => { $("allsites").checked = !want; status(String(e.message || e), true); });
 };
 $("rate-default").onchange = saveRate;
 // the popup closes when it loses the focus: 📌 keeps its controls in the page
