@@ -860,6 +860,7 @@ function panelClamp(x, y) {
   bar.style.left = x + "px";
   bar.style.top = y + "px";
   bar.style.right = bar.style.bottom = "auto";
+  bar.style.transform = "none";
   return [x, y];
 }
 
@@ -881,7 +882,7 @@ function panelDrag(e) {
 }
 
 function panelResize() {
-  if (panel.host && panel.el.bar.style.left)
+  if (panel.host && panel.el.bar.style.top)
     panelClamp(parseFloat(panel.el.bar.style.left), parseFloat(panel.el.bar.style.top));
 }
 
@@ -897,8 +898,10 @@ async function panelShow() {
   bar.className = "bar";
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", msg("extName"));
-  bar.style.right = "16px";
-  bar.style.top = "16px";
+  // until it is placed: at the bottom in the middle, like a player
+  bar.style.left = "50%";
+  bar.style.bottom = "16px";
+  bar.style.transform = "translateX(-50%)";
 
   const grip = document.createElement("span");
   grip.className = "grip";
