@@ -393,8 +393,10 @@ async function fill(gen) {
     browser.runtime.sendMessage({type: "speak", id, text: s.text, lang: s.lang}).catch(() => {});
   }
   if (gen === reader.generation && !reader.sent.length && !reader.queue.length &&
-      reader.unit >= reader.units.length)
+      reader.unit >= reader.units.length) {
     stop(false);
+    browser.runtime.sendMessage({type: "done"}).catch(() => {});
+  }
 }
 
 function show(s) {
@@ -420,6 +422,7 @@ function onEvent(msg) {
   }
   if (msg.event === "error") {
     stop(false);
+    browser.runtime.sendMessage({type: "done"}).catch(() => {});
     notice(msg.message || browser.i18n.getMessage("speechFailed"));
     return;
   }
@@ -797,12 +800,17 @@ async function panelRate(change) {
   reset.disabled = settings.rate === null;
 }
 
+/* what the other tabs do: the panel of a quiet tab stops or pauses the one
+ * that speaks */
+const busy = {speaking: false, own: false, paused: false};
+
 function panelUpdate() {
   if (!panel.host)
     return;
   const {pause, stopB} = panel.el;
-  pause.disabled = stopB.disabled = !reader.active;
-  pause.textContent = reader.paused ? "▶" : "⏸";
+  const other = !reader.active && busy.speaking && !busy.own;
+  pause.disabled = stopB.disabled = !reader.active && !other;
+  pause.textContent = (other ? busy.paused : reader.paused) ? "▶" : "⏸";
   panel.el.lang.value = langOverride || "";
 }
 
@@ -866,8 +874,19 @@ async function panelShow() {
     const r = await act({action: "auto"});
     if (r && r.error) notice(r.error);
   }, "main");
-  el.pause = panelButton("⏸", msg("popPause"), () => act({action: "toggle-pause"}));
-  el.stopB = panelButton("⏹", msg("popStop"), () => { pickerEnd(); stop(); });
+  el.pause = panelButton("⏸", msg("popPause"), () => {
+    if (reader.active)
+      act({action: "toggle-pause"});
+    else
+      browser.runtime.sendMessage({type: "pause-any"}).catch(() => {});
+  });
+  el.stopB = panelButton("⏹", msg("popStop"), () => {
+    pickerEnd();
+    if (reader.active)
+      stop();
+    else
+      browser.runtime.sendMessage({type: "stop-any"}).catch(() => {});
+  });
   const pick = panelButton("🎯", msg("popPickTitle"), () => pickerStart());
   const page = panelButton("📄", msg("popPageTitle"), async () => {
     const r = await act({action: "page"});
@@ -906,6 +925,12 @@ async function panelShow() {
   panelUpdate();
   panelLanguages(el.lang);
   panelRate();
+  browser.runtime.sendMessage({type: "status"}).then((s) => {
+    if (s && s.speakingTab !== null && s.speakingTab !== undefined) {
+      Object.assign(busy, {speaking: true, own: s.speakingTab === s.you, paused: !!s.paused});
+      panelUpdate();
+    }
+  }).catch(() => {});
   try {
     const {panelPos} = await browser.storage.local.get("panelPos");
     if (panelPos && Number.isFinite(panelPos.x) && Number.isFinite(panelPos.y))
@@ -963,6 +988,9 @@ async function act(msg) {
   case "panel":
     await panelShow();
     return {ok: true};
+  case "panel-hide":
+    panelHide();
+    return {ok: true};
   case "attach":       // injected by now; nothing more to do
   case "state":
     return {active: reader.active, paused: reader.paused, picking: picker.on, buttons: hover.on,
@@ -982,12 +1010,30 @@ browser.runtime.onMessage.addListener((msg) => {
     return onEvent(msg);
   if (msg.type === "stopped")
     stop(false);
+  if (msg.type === "busy") {
+    Object.assign(busy, {speaking: msg.speaking, own: msg.own, paused: msg.paused});
+    panelUpdate();
+  }
 });
 
-browser.storage.local.get("settings").then((r) => {
-  if (!r.settings || r.settings.buttons !== false)
-    hoverStart();
-}).catch(() => hoverStart());
+/* the panel is on by default; both settings and the panel's place follow
+ * changes made in any tab */
+function applySettings(s = {}) {
+  if (s.buttons !== false) hoverStart(); else hoverStop();
+  if (s.panel !== false) panelShow(); else panelHide();
+}
+browser.storage.local.get("settings").then((r) => applySettings(r.settings))
+  .catch(() => applySettings());
+browser.storage.onChanged.addListener((changes) => {
+  if (changes.settings) {
+    const o = changes.settings.oldValue || {}, n = changes.settings.newValue || {};
+    if (o.buttons !== n.buttons || o.panel !== n.panel)
+      applySettings(n);
+  }
+  const p = changes.panelPos && changes.panelPos.newValue;
+  if (p && panel.host && Number.isFinite(p.x) && Number.isFinite(p.y))
+    panelClamp(p.x, p.y);
+});
 
 window.__speechdReader = {act, collectUnits, articleUnits, pageUnits, sentencesOf, unitText};
 })();

@@ -17,6 +17,15 @@ let nextId = 1;
 const pending = new Map();   // host id -> {tab, id (the tab's own)}
 let idleTimer = null;
 let lastError = null;
+let paused = false;          // the speaking tab is paused
+
+/* tell every tab's panel who speaks, so it can stop or pause any tab */
+async function broadcast() {
+  for (const t of await browser.tabs.query({}).catch(() => []))
+    browser.tabs.sendMessage(t.id, {type: "busy", speaking: speakingTab !== null,
+                                    own: t.id === speakingTab, paused}, {frameId: 0})
+      .catch(() => {});
+}
 
 function hostPort() {
   if (port)
@@ -31,6 +40,8 @@ function hostPort() {
       toTab(tab, {type: "event", event: "error", id, message: err});
     pending.clear();
     speakingTab = null;
+    paused = false;
+    broadcast();
   });
   const settings = currentSettings;
   if (settings.rate !== null)
@@ -78,10 +89,14 @@ function stopAll(except = null) {
   if (speakingTab !== null)
     tabs.add(speakingTab);
   pending.clear();
+  const was = speakingTab;
   speakingTab = null;
+  paused = false;
   tabs.delete(except);
   for (const tab of tabs)
     toTab(tab, {type: "stopped"});
+  if (was !== null)
+    broadcast();
 }
 
 /* settings shared with the popup */
@@ -108,7 +123,11 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     if (speakingTab !== null && speakingTab !== tab) {
       stopAll();
     }
-    speakingTab = tab;
+    if (speakingTab !== tab) {
+      speakingTab = tab;
+      paused = false;
+      broadcast();
+    }
     const id = nextId++;
     pending.set(id, {tab, id: msg.id});
     try {
@@ -126,11 +145,28 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return;
   case "pause":
   case "resume":
-    if (port && (tab === null || tab === speakingTab))
+    if (port && (tab === null || tab === speakingTab)) {
       port.postMessage({cmd: msg.type});
+      paused = msg.type === "pause";
+      broadcast();
+    }
+    return;
+  case "done":        // the tab read to the end or gave up
+    if (tab === speakingTab) {
+      speakingTab = null;
+      paused = false;
+      broadcast();
+    }
+    return;
+  case "stop-any":    // a panel in a tab that does not speak
+    stopAll();
+    return;
+  case "pause-any":
+    if (speakingTab !== null)
+      toTab(speakingTab, {type: "action", action: "toggle-pause"});
     return;
   case "status":
-    return Promise.resolve({speakingTab, lastError});
+    return Promise.resolve({speakingTab, lastError, paused, you: tab});
   case "run":         // from the popup
     return runInTab(msg.tab, msg.action, {lang: msg.lang, on: msg.on});
   }
@@ -171,6 +207,31 @@ async function runInTab(tab, action, extra = {}) {
   }
   return browser.tabs.sendMessage(tab, Object.assign({type: "action", action}, extra), {frameId: 0});
 }
+
+/* with the optional right to every site, the script (▶ buttons, panel)
+ * goes into every page by itself; without it, only after a user's action */
+const ALL_SITES = {origins: ["<all_urls>"]};
+const SCRIPT_ID = "reader";
+
+async function syncAllSites(injectOpen = false) {
+  const all = await browser.permissions.contains(ALL_SITES);
+  const ours = await browser.scripting.getRegisteredContentScripts({ids: [SCRIPT_ID]});
+  if (all && !ours.length) {
+    await browser.scripting.registerContentScripts([{
+      id: SCRIPT_ID, matches: ["<all_urls>"], runAt: "document_idle",
+      js: ["lib/Readability.js", "content/reader.js"], css: ["content/reader.css"],
+    }]);
+  } else if (!all && ours.length) {
+    await browser.scripting.unregisterContentScripts({ids: [SCRIPT_ID]});
+  }
+  if (all && injectOpen) {
+    for (const t of await browser.tabs.query({url: ["http://*/*", "https://*/*", "file:///*"]}))
+      inject(t.id).catch(() => {});
+  }
+}
+syncAllSites().catch(() => {});
+browser.permissions.onAdded.addListener(() => syncAllSites(true).catch(() => {}));
+browser.permissions.onRemoved.addListener(() => syncAllSites().catch(() => {}));
 
 /* context menu: an event page must create it only once */
 browser.runtime.onInstalled.addListener(() => {

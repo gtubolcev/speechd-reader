@@ -26,5 +26,14 @@ Layout:
   `speechd` module of speech-dispatcher); `host/install.sh` registers it;
 - `tests/` — host protocol tests (`python3 -I tests/test_host.py`).
 
+Controls: a floating reading panel on the page (on by default; it keeps
+its place across tabs, and its stop and pause act on whichever tab speaks),
+▶ buttons next to paragraphs, the toolbar popup and the context menu.
+Without extra rights the extension enters a page only after a user action
+(opening the popup, a menu item, a shortcut). "On all sites by itself" in
+the popup asks Firefox for the optional right to read all sites; then the
+panel and the buttons appear on every page by themselves. The text still
+goes only to Speech Dispatcher on this computer.
+
 Shortcuts: Alt+Shift+R read, Alt+Shift+C choose, Alt+Shift+P pause,
 Alt+Shift+X stop.

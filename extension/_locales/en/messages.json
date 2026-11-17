@@ -98,9 +98,18 @@
     "message": "Drag to move"
   },
   "panelClose": {
-    "message": "Close the panel"
+    "message": "Close the panel in this tab"
   },
   "menuPanel": {
     "message": "Show the reading panel"
+  },
+  "popPanel": {
+    "message": "Reading panel on pages"
+  },
+  "popAllSites": {
+    "message": "On all sites by itself"
+  },
+  "popAllSitesTitle": {
+    "message": "Show the ▶ buttons and the panel on every page without opening this window first. Firefox asks for the right to read all sites; the text still goes only to Speech Dispatcher on this computer."
   }
 }

@@ -62,6 +62,8 @@ async function fillLanguages() {
 async function loadSettings() {
   const {settings = {rate: null}} = await browser.storage.local.get("settings");
   $("buttons").checked = settings.buttons !== false;
+  $("panel").checked = settings.panel !== false;
+  $("allsites").checked = await browser.permissions.contains(ALL_SITES);
   $("rate-default").checked = settings.rate === null;
   $("rate").value = settings.rate === null ? 0 : settings.rate;
   $("rate").disabled = settings.rate === null;
@@ -92,6 +94,18 @@ $("rate").oninput = saveRate;
 $("buttons").onchange = () => {
   save({buttons: $("buttons").checked});
   run("buttons", {on: $("buttons").checked});
+};
+$("panel").onchange = () => {
+  save({panel: $("panel").checked});
+  run($("panel").checked ? "panel" : "panel-hide");
+};
+// the request must come straight from the click: no await before it
+const ALL_SITES = {origins: ["<all_urls>"]};
+$("allsites").onchange = () => {
+  const want = $("allsites").checked;
+  (want ? browser.permissions.request(ALL_SITES) : browser.permissions.remove(ALL_SITES))
+    .then(async () => { $("allsites").checked = await browser.permissions.contains(ALL_SITES); })
+    .catch((e) => status(String(e.message || e), true));
 };
 $("rate-default").onchange = saveRate;
 // the popup closes when it loses the focus: 📌 keeps its controls in the page
