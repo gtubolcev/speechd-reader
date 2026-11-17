@@ -3,10 +3,15 @@
 # SPDX-License-Identifier: MIT
 """Native messaging host of the speechd-reader browser extension.
 
-Speaks text through Speech Dispatcher. It never chooses a module or a voice:
-each message only carries its language, so Speech Dispatcher uses the user's
-configuration (DefaultModule, LanguageDefaultModule, the module's voice for
-the language, DefaultRate, ...).
+Speaks text through Speech Dispatcher. Each message carries its language,
+and Speech Dispatcher uses the user's configuration (DefaultModule,
+LanguageDefaultModule, the module's voice for the language, DefaultRate, ...).
+One exception: when the module the configuration gives for a language has no
+voice for it (DefaultModule "vosk" and a German page), the host picks a module
+that has one. A module whose configuration names a voice for the language
+comes first (SherpaVoice "de" ...), then other modules with such a voice,
+espeak last. What it picked goes to ~/.cache/speechd-reader/host.log
+(languages and modules only, never the text).
 
 Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
   in:  {"cmd": "speak", "id": N, "text": "...", "lang": "uk"}
@@ -63,6 +68,78 @@ def connection_alive(client):
     conn = getattr(client, "_conn", None)
     thread = getattr(conn, "_communication_thread", None)
     return thread is None or thread.is_alive()
+
+
+LOG_MAX = 256 * 1024
+FALLBACK_LAST = ("espeak-ng", "espeak", "espeak-ng-mbrola", "dummy")
+
+
+def log(line):
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    path = os.path.join(base, "speechd-reader", "host.log")
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        if path_age(path) != float("inf") and os.stat(path).st_size > LOG_MAX:
+            os.replace(path, path + ".1")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + line + "\n")
+    except OSError:
+        pass
+
+
+CONF_RE = re.compile(r'^\s*(DefaultModule|LanguageDefaultModule)\s+"([^"]*)"(?:\s+"([^"]*)")?',
+                     re.M)
+VOICE_LINE_RE = re.compile(r'^\s*[A-Za-z]+Voice\s+"([^"]+)"\s+"[^"]+"', re.M)
+
+
+def read_text(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read(1024 * 1024)
+    except OSError:
+        return None
+
+
+def speechd_routing():
+    """(DefaultModule, {language: module}) from the speechd.conf the server
+    reads: the user's if there is one, else the system's."""
+    home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    text = read_text(os.path.join(home, "speech-dispatcher", "speechd.conf"))
+    if text is None:
+        text = read_text("/etc/speech-dispatcher/speechd.conf") or ""
+    default, per_lang = None, {}
+    for key, a, b in CONF_RE.findall(text):
+        if key == "DefaultModule":
+            default = a
+        elif b:
+            per_lang[a.lower()] = b
+    return default, per_lang
+
+
+def configured_voice_modules(language):
+    """Modules whose own .conf names a voice for @language; the module the
+    user set up for more languages first (their main synthesizer)."""
+    home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    found, count = [], {}
+    for base in (os.path.join(home, "speech-dispatcher"), "/etc/speech-dispatcher"):
+        try:
+            names = sorted(os.listdir(os.path.join(base, "modules")))[:200]
+        except OSError:
+            continue
+        for n in names:
+            if not n.endswith(".conf") or n[:-5] in found:
+                continue
+            text = read_text(os.path.join(base, "modules", n)) or ""
+            langs = VOICE_LINE_RE.findall(text)
+            if any(same_language(v, language) for v in langs):
+                found.append(n[:-5])
+                count[n[:-5]] = len(set(langs))
+    return sorted(found, key=lambda m: -count[m])
+
+
+def same_language(voice_lang, language):
+    v = (voice_lang or "").lower().replace("_", "-")
+    return v == language or v.split("-")[0] == language.split("-")[0]
 
 
 def config_files():
@@ -144,6 +221,10 @@ class Speaker:
         self.rate = None
         self.stamp = None
         self.outstanding = set()    # ids spoken and not yet ended
+        self.module_set = None      # module named on this connection, None: never
+        self.voices = {}            # module -> set of voice languages, per config stamp
+        self.routes = {}            # language -> module, per config stamp
+        self.routes_stamp = None
         threading.Thread(target=self.watch, daemon=True).start()
 
     def watch(self):
@@ -183,6 +264,7 @@ class Speaker:
             except Exception:
                 pass
             self.client = None
+        self.module_set = None
         self.outstanding.clear()     # a closed connection sends no more events
 
     def call(self, fn):
@@ -197,6 +279,64 @@ class Speaker:
                     send({"event": "lost", "id": msg_id})
                 return fn(self.connect())
 
+    def module_languages(self, module):
+        """Voice languages of @module, asked on a connection of its own (the
+        reading connection keeps its module)."""
+        if module not in self.voices:
+            langs = set()
+            probe = self.speechd.SSIPClient("speechd-reader", "probe", autospawn=True)
+            try:
+                probe.set_output_module(module)
+                for voice in probe.list_synthesis_voices():
+                    if len(voice) > 1 and voice[1]:
+                        langs.add(voice[1].lower().replace("_", "-"))
+            finally:
+                probe.close()
+            self.voices[module] = langs
+        return self.voices[module]
+
+    def has_voice(self, module, language):
+        try:
+            return any(same_language(v, language) for v in self.module_languages(module))
+        except Exception:
+            return True     # can't tell: leave it to the configuration
+
+    def route(self, language):
+        """The module for @language: the configured one, or, when it has no
+        voice for the language, one that has."""
+        stamp = config_stamp()
+        if stamp != self.routes_stamp:
+            self.routes, self.voices, self.routes_stamp = {}, {}, stamp
+        if language in self.routes:
+            return self.routes[language]
+        default, per_lang = speechd_routing()
+        configured = per_lang.get(language) or per_lang.get(language.split("-")[0]) or default
+        chosen = configured
+        if configured and not self.has_voice(configured, language):
+            try:
+                modules = list(self.call_probe(lambda c: c.list_output_modules()))
+            except Exception:
+                modules = []
+            first = [m for m in configured_voice_modules(language) if m in modules]
+            rest = [m for m in modules if m not in first and m not in FALLBACK_LAST]
+            last = [m for m in FALLBACK_LAST if m in modules]
+            for m in first + rest + last:
+                if m != configured and self.has_voice(m, language):
+                    chosen = m
+                    break
+            log("%s: %s has no voice for it, using %s" % (language, configured, chosen))
+        else:
+            log("%s: %s" % (language, configured))
+        self.routes[language] = (chosen, configured)
+        return chosen, configured
+
+    def call_probe(self, fn):
+        probe = self.speechd.SSIPClient("speechd-reader", "probe", autospawn=True)
+        try:
+            return fn(probe)
+        finally:
+            probe.close()
+
     def speak(self, msg_id, text, lang):
         ct = self.speechd.CallbackType
 
@@ -210,6 +350,13 @@ class Speaker:
             language = speechd_language(lang)
             if language is not None:
                 client.set_language(language)
+                chosen, configured = self.route(language)
+                # leave the module to the server until a fallback is needed;
+                # from then on this connection names the module every time
+                if (chosen != configured or self.module_set is not None) \
+                        and chosen and chosen != self.module_set:
+                    client.set_output_module(chosen)
+                    self.module_set = chosen
             # before speak(): the end may come before speak() returns
             self.outstanding.add(msg_id)
             try:
