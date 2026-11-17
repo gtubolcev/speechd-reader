@@ -315,7 +315,28 @@ function articleUnits() {
         kept.add(Number(name.slice(9)));
   if (!kept.size)
     return null;
-  const units = collectUnits(document.body, (t) => kept.has(index.get(t.parentElement)));
+  // Readability also moves text into new elements without marks (a div of
+  // text and links becomes a <p>: bsky.app posts). Text nodes are moved,
+  // not changed: take a text it kept if an ancestor is in the article.
+  const texts = new Map();
+  const w = document.createTreeWalker(article.content, NodeFilter.SHOW_TEXT);
+  for (let t; (t = w.nextNode());)
+    texts.set(t.nodeValue, (texts.get(t.nodeValue) || 0) + 1);
+  const inArticle = (el) => {
+    for (; el; el = el.parentElement)
+      if (kept.has(index.get(el)))
+        return true;
+    return false;
+  };
+  const units = collectUnits(document.body, (t) => {
+    const n = texts.get(t.nodeValue) || 0;
+    const parentKept = kept.has(index.get(t.parentElement));
+    if (!parentKept && !(n && inArticle(t.parentElement)))
+      return false;
+    if (n)
+      texts.set(t.nodeValue, n - 1);
+    return true;
+  });
   // Readability keeps the title out of the content: read it first
   const h1 = units.length && firstHeading(units[0].block);
   if (h1)
