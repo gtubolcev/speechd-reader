@@ -588,21 +588,16 @@ function hoverPlace(block) {
   }
   const r = block.getBoundingClientRect();
   const size = 24;
-  // in the left margin, else just after the paragraph's last line, else
-  // over the paragraph's first letter
-  let left = r.left - size - 4, top = r.top;
-  if (left < 2) {
-    const text = document.createRange();
-    text.selectNodeContents(block);
-    const lines = text.getClientRects();
-    const last = lines[lines.length - 1];
-    if (last && last.right + size + 8 <= document.documentElement.clientWidth) {
-      left = last.right + 6;
-      top = last.top + (last.height - size) / 2;
-    } else {
-      left = Math.max(r.left, 0) + 2;
-    }
-  }
+  // at the start of the first line: in the left margin, else in the space
+  // the indent and the margin leave, and only on a page that has neither,
+  // half-transparent over the first letter
+  const text = document.createRange();
+  text.selectNodeContents(block);
+  const first = [...text.getClientRects()].find((l) => l.width > 0) || r;
+  let left = r.left - size - 4;
+  if (left < 2)
+    left = Math.max(first.left - size - 4, 2);
+  const top = first.top + (first.height - size) / 2;
   hover.button.style.left = left + "px";
   hover.button.style.top = Math.max(top, 0) + "px";
   hover.button.hidden = false;
