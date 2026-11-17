@@ -267,14 +267,19 @@ async function langOf(unit, text) {
   const found = await detect(text);
   if (found) {
     const fixed = siteCorrections[found] || found;
+    reader.lastLang = fixed;
     if (!d || !d.lang.toLowerCase().startsWith(fixed.split("-")[0].toLowerCase()))
       return fixed;
-  } else if (reader.lastLang) {
-    // too short or unclear to tell (">> ещё 3 мини-новости"): the language
-    // of the text read just before, not the browser's
-    return reader.lastLang;
+    return d.lang;
   }
-  return d ? d.lang : (document.documentElement.lang || navigator.language);
+  // Too short or unclear to tell (headlines, menus, ">> ещё 3 мини-новости"):
+  // the language of the last text detected, else of all the text to read,
+  // else what the page says; the browser's language only as the last resort.
+  if (reader.lastLang)
+    return reader.lastLang;
+  if (reader.pageLang && (!d || !d.lang.toLowerCase().startsWith(reader.pageLang.split("-")[0].toLowerCase())))
+    return reader.pageLang;
+  return d ? d.lang : navigator.language;
 }
 
 /* ---------- what to read ---------- */
@@ -405,7 +410,8 @@ const reader = {
   queue: [],                    // sentences of units already split
   sent: [],                     // sentences in speechd: {id, s}
   nextId: 1,
-  lastLang: null,               // of the unit read last: for short ones
+  lastLang: null,               // last language detected: for short units
+  pageLang: null,               // detected on all the units together
   generation: 0,
   requeue: 0,                   // timer: put lost sentences back
   paused: false,
@@ -425,6 +431,7 @@ function stop(tell = true) {
   reader.queue = [];
   reader.sent = [];
   reader.lastLang = null;
+  reader.pageLang = null;
   clearHighlight();
   panelUpdate();
   if (tell)
@@ -439,7 +446,18 @@ async function start(units) {
   reader.unit = 0;
   reader.active = true;
   panelUpdate();
-  await fill(reader.generation);
+  const gen = reader.generation;
+  let sample = "";
+  for (const u of units) {
+    if (sample.length >= 2000)
+      break;
+    sample += unitText(u).text + "\n";
+  }
+  const pageLang = await detect(sample);
+  if (gen !== reader.generation)
+    return {ok: true, units: units.length};
+  reader.pageLang = pageLang && (siteCorrections[pageLang] || pageLang);
+  await fill(gen);
   return {ok: true, units: units.length};
 }
 
@@ -454,7 +472,6 @@ async function fill(gen) {
       const lang = await langOf(unit, text);
       if (gen !== reader.generation)
         return;
-      reader.lastLang = lang;
       reader.queue.push(...sentencesOf(unit, lang).map((s) => Object.assign(s, {unit})));
       continue;
     }
