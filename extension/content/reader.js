@@ -355,6 +355,7 @@ function stop(tell = true) {
   reader.queue = [];
   reader.sent = [];
   clearHighlight();
+  panelUpdate();
   if (tell)
     browser.runtime.sendMessage({type: "stop"}).catch(() => {});
 }
@@ -366,6 +367,7 @@ async function start(units) {
   reader.units = units;
   reader.unit = 0;
   reader.active = true;
+  panelUpdate();
   await fill(reader.generation);
   return {ok: true, units: units.length};
 }
@@ -489,6 +491,8 @@ function pickerDown() {
 }
 
 function onPickWheel(e) {
+  if (onPanel(e))
+    return;
   e.preventDefault();
   e.stopPropagation();
   if (e.deltaY < 0) pickerUp(); else pickerDown();
@@ -510,7 +514,12 @@ function onPickKey(e) {
   keys[e.key]();
 }
 
+/* the panel works while picking: its 🎯 again, ⏹, ✕ */
+const onPanel = (e) => e.target instanceof Element && e.target.closest(".speechd-reader-panel");
+
 function onPickClick(e) {
+  if (onPanel(e))
+    return;
   e.preventDefault();
   e.stopPropagation();
   const el = pickerTarget(e.clientX, e.clientY);
@@ -520,6 +529,8 @@ function onPickClick(e) {
 }
 
 function swallow(e) {
+  if (onPanel(e))
+    return;
   e.preventDefault();
   e.stopPropagation();
 }
@@ -675,6 +686,216 @@ function hoverStop() {
   hover.button.remove();
 }
 
+/* ---------- the floating panel: the popup's controls, kept in the page ---------- */
+
+const panel = {host: null, root: null, el: {}};
+
+const PANEL_CSS = `
+:host { all: initial; }
+.bar {
+  position: fixed; z-index: 2147483647; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 4px; max-width: calc(100vw - 16px); box-sizing: border-box;
+  padding: 4px 6px; border-radius: 8px; border: 1px solid #8f8f9d;
+  background: #f9f9fb; color: #15141a; font: 13px/1.3 system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .3); user-select: none;
+}
+@media (prefers-color-scheme: dark) {
+  .bar { background: #2b2a33; color: #fbfbfe; border-color: #5b5b66; }
+  button, select { background: #42414d; color: #fbfbfe; border-color: #5b5b66; }
+}
+button, select {
+  font: inherit; margin: 0; padding: 3px 7px; border: 1px solid #c4c4c9;
+  border-radius: 4px; background: #fff; color: inherit; cursor: pointer;
+}
+button:disabled { opacity: .45; cursor: default; }
+select { max-width: 9em; padding: 2px; }
+.grip { cursor: move; padding: 0 2px; opacity: .6; font-size: 15px; }
+.main { font-weight: 600; }
+.speed { display: flex; align-items: center; gap: 3px; }
+input[type=range] { width: 80px; margin: 0; }
+.val { min-width: 2.2em; text-align: end; font-variant-numeric: tabular-nums; opacity: .8; }
+.close { border: none; background: none; padding: 2px 5px; opacity: .7; }
+`;
+
+function msg(name) {
+  return browser.i18n.getMessage(name);
+}
+
+function panelButton(text, title, onclick, cls = "") {
+  const b = document.createElement("button");
+  b.textContent = text;
+  b.title = title;
+  if (cls)
+    b.className = cls;
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onclick();
+  });
+  return b;
+}
+
+async function panelLanguages(select) {
+  const names = new Intl.DisplayNames([navigator.language], {type: "language"});
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = msg("popLangAuto");
+  select.append(auto);
+  let accept = [];
+  try { accept = await browser.i18n.getAcceptLanguages(); } catch (e) { /* none */ }
+  const codes = new Set([...accept, navigator.language, document.documentElement.lang || "en",
+    "en", "ru", "uk", "de", "fr", "es", "it", "pl", "cs", "pt", "zh", "ja"]
+    .map((c) => String(c).split(/[-_]/)[0].toLowerCase())
+    .filter((c) => /^[a-z]{2,3}$/.test(c)));
+  const name = (c) => { try { return names.of(c); } catch (e) { return c; } };
+  for (const c of [...codes].sort((a, b) => name(a).localeCompare(name(b)))) {
+    const o = document.createElement("option");
+    o.value = c;
+    o.textContent = name(c) + " (" + c + ")";
+    select.append(o);
+  }
+  select.value = langOverride || "";
+}
+
+async function panelRate(change) {
+  let settings = {rate: null};
+  try {
+    settings = Object.assign(settings, (await browser.storage.local.get("settings")).settings);
+    if (change !== undefined) {
+      settings.rate = change;
+      await browser.storage.local.set({settings});
+    }
+  } catch (e) { /* storage unavailable: keep the default */ }
+  const {range, val, reset} = panel.el;
+  range.value = settings.rate === null ? 0 : settings.rate;
+  val.textContent = settings.rate === null ? "" : settings.rate;
+  reset.disabled = settings.rate === null;
+}
+
+function panelUpdate() {
+  if (!panel.host)
+    return;
+  const {pause, stopB} = panel.el;
+  pause.disabled = stopB.disabled = !reader.active;
+  pause.textContent = reader.paused ? "▶" : "⏸";
+  panel.el.lang.value = langOverride || "";
+}
+
+function panelClamp(x, y) {
+  const bar = panel.el.bar;
+  const w = bar.offsetWidth, h = bar.offsetHeight;
+  x = Math.min(Math.max(x, 0), Math.max(window.innerWidth - w, 0));
+  y = Math.min(Math.max(y, 0), Math.max(window.innerHeight - h, 0));
+  bar.style.left = x + "px";
+  bar.style.top = y + "px";
+  bar.style.right = bar.style.bottom = "auto";
+  return [x, y];
+}
+
+function panelDrag(e) {
+  if (e.button !== 0)
+    return;
+  e.preventDefault();
+  const r = panel.el.bar.getBoundingClientRect();
+  const dx = e.clientX - r.left, dy = e.clientY - r.top;
+  let pos = [r.left, r.top];
+  const move = (m) => { pos = panelClamp(m.clientX - dx, m.clientY - dy); };
+  const up = () => {
+    window.removeEventListener("mousemove", move, true);
+    window.removeEventListener("mouseup", up, true);
+    browser.storage.local.set({panelPos: {x: pos[0], y: pos[1]}}).catch(() => {});
+  };
+  window.addEventListener("mousemove", move, true);
+  window.addEventListener("mouseup", up, true);
+}
+
+function panelResize() {
+  if (panel.host && panel.el.bar.style.left)
+    panelClamp(parseFloat(panel.el.bar.style.left), parseFloat(panel.el.bar.style.top));
+}
+
+async function panelShow() {
+  if (panel.host)
+    return;
+  const host = document.createElement("div");
+  host.className = "speechd-reader-ui speechd-reader-panel";
+  const root = host.attachShadow({mode: "closed"});
+  const style = document.createElement("style");
+  style.textContent = PANEL_CSS;
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", msg("extName"));
+  bar.style.right = "16px";
+  bar.style.top = "16px";
+
+  const grip = document.createElement("span");
+  grip.className = "grip";
+  grip.textContent = "⠿";
+  grip.title = msg("panelMove");
+  grip.addEventListener("mousedown", panelDrag);
+
+  const el = panel.el;
+  el.bar = bar;
+  const read = panelButton("▶ " + msg("popRead"), msg("popReadTitle"), async () => {
+    const r = await act({action: "auto"});
+    if (r && r.error) notice(r.error);
+  }, "main");
+  el.pause = panelButton("⏸", msg("popPause"), () => act({action: "toggle-pause"}));
+  el.stopB = panelButton("⏹", msg("popStop"), () => { pickerEnd(); stop(); });
+  const pick = panelButton("🎯", msg("popPickTitle"), () => pickerStart());
+  const page = panelButton("📄", msg("popPageTitle"), async () => {
+    const r = await act({action: "page"});
+    if (r && r.error) notice(r.error);
+  });
+
+  el.lang = document.createElement("select");
+  el.lang.title = msg("popLang");
+  el.lang.addEventListener("change", () => {
+    langOverride = el.lang.value || null;
+  });
+
+  const speed = document.createElement("span");
+  speed.className = "speed";
+  speed.title = msg("popSpeed");
+  el.range = document.createElement("input");
+  el.range.type = "range";
+  el.range.min = -100;
+  el.range.max = 100;
+  el.range.step = 5;
+  el.range.addEventListener("change", () => panelRate(Number(el.range.value)));
+  el.range.addEventListener("input", () => { el.val.textContent = el.range.value; });
+  el.val = document.createElement("span");
+  el.val.className = "val";
+  el.reset = panelButton("↺", msg("popSpeedDefault"), () => panelRate(null));
+  speed.append("🐢", el.range, el.val, el.reset);
+
+  const close = panelButton("✕", msg("panelClose"), panelHide, "close");
+  bar.append(grip, read, el.pause, el.stopB, pick, page, el.lang, speed, close);
+  root.append(style, bar);
+  panel.host = host;
+  panel.root = root;
+  document.documentElement.append(host);
+  window.addEventListener("resize", panelResize, {passive: true});
+
+  panelUpdate();
+  panelLanguages(el.lang);
+  panelRate();
+  try {
+    const {panelPos} = await browser.storage.local.get("panelPos");
+    if (panelPos && Number.isFinite(panelPos.x) && Number.isFinite(panelPos.y))
+      panelClamp(panelPos.x, panelPos.y);
+  } catch (e) { /* default place */ }
+}
+
+function panelHide() {
+  if (!panel.host)
+    return;
+  window.removeEventListener("resize", panelResize);
+  panel.host.remove();
+  panel.host = panel.root = null;
+  panel.el = {};
+}
+
 /* ---------- messages ---------- */
 
 async function act(msg) {
@@ -704,15 +925,21 @@ async function act(msg) {
       return {ok: false};
     reader.paused = !reader.paused;
     browser.runtime.sendMessage({type: reader.paused ? "pause" : "resume"}).catch(() => {});
+    panelUpdate();
     return {ok: true, paused: reader.paused};
   case "set-lang":
     langOverride = msg.lang || null;
+    panelUpdate();
     return {ok: true};
   case "buttons":
     if (msg.on) hoverStart(); else hoverStop();
     return {ok: true};
+  case "panel":
+    await panelShow();
+    return {ok: true};
   case "state":
     return {active: reader.active, paused: reader.paused, picking: picker.on, buttons: hover.on,
+            panel: !!panel.host,
             lang: langOverride,
             pageLang: document.documentElement.lang || null};
   }

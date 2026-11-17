@@ -131,11 +131,6 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return;
   case "status":
     return Promise.resolve({speakingTab, lastError});
-  case "detach":      // the popup's 📌: the same page as a window that stays
-    return browser.windows.create({
-      url: browser.runtime.getURL("popup/popup.html?detached=1&window=" + Number(msg.window)),
-      type: "popup", width: 300, height: 380,
-    }).then(() => ({}));
   case "run":         // from the popup
     return runInTab(msg.tab, msg.action, {lang: msg.lang, on: msg.on});
   }
@@ -183,6 +178,7 @@ browser.runtime.onInstalled.addListener(() => {
   browser.menus.create({id: "read-from-here", title: browser.i18n.getMessage("menuFromHere"), contexts: ["page", "link", "image"]});
   browser.menus.create({id: "read-article", title: browser.i18n.getMessage("menuArticle"), contexts: ["page"]});
   browser.menus.create({id: "pick-element", title: browser.i18n.getMessage("menuPick"), contexts: ["page"]});
+  browser.menus.create({id: "panel", title: browser.i18n.getMessage("menuPanel"), contexts: ["page"]});
 });
 
 browser.menus.onClicked.addListener((info, tab) => {

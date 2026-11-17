@@ -3,11 +3,6 @@
 
 const $ = (id) => document.getElementById(id);
 let tab = null;
-// opened with 📌 as a window of its own: it acts on the active tab of the
-// browser window used last, and follows it
-const params = new URLSearchParams(location.search);
-const detached = params.has("detached");
-let browserWindow = detached ? Number(params.get("window")) || null : null;
 
 document.documentElement.lang = browser.i18n.getUILanguage();
 for (const el of document.querySelectorAll("[data-i18n]"))
@@ -21,17 +16,7 @@ function status(text, error = false) {
 }
 
 async function currentTab() {
-  if (!detached) {
-    [tab] = await browser.tabs.query({active: true, currentWindow: true});
-    return;
-  }
-  if (browserWindow !== null)
-    [tab] = await browser.tabs.query({active: true, windowId: browserWindow}).catch(() => []);
-  if (!tab) {     // that window was closed: take any browser window
-    const [w] = await browser.windows.getAll({windowTypes: ["normal"]});
-    browserWindow = w ? w.id : null;
-    [tab] = w ? await browser.tabs.query({active: true, windowId: w.id}) : [];
-  }
+  [tab] = await browser.tabs.query({active: true, currentWindow: true});
 }
 
 async function run(action, extra = {}) {
@@ -95,8 +80,8 @@ function saveRate() {
   save({rate});
 }
 
-// the popup gets out of the way; the pinned window stays
-const done = () => { if (!detached) window.close(); else refresh(); };
+// the popup gets out of the way
+const done = () => window.close();
 $("auto").onclick = async () => { const r = await run("auto"); if (r && r.ok) done(); };
 $("page").onclick = async () => { const r = await run("page"); if (r && r.ok) done(); };
 $("pick").onclick = async () => { await run("pick-element"); done(); };
@@ -109,38 +94,8 @@ $("buttons").onchange = () => {
   run("buttons", {on: $("buttons").checked});
 };
 $("rate-default").onchange = saveRate;
-$("pin").onclick = () => {
-  browser.windows.getCurrent().then(async (w) => {
-    await browser.runtime.sendMessage({type: "detach", window: w.id});
-    window.close();
-  });
-};
-// without the right to every page, the window can act only on pages where
-// the extension was started already (activeTab)
-const ALL = {origins: ["<all_urls>"]};
-$("allow").onclick = async () => {
-  await browser.permissions.request(ALL);
-  $("allow").hidden = await browser.permissions.contains(ALL);
-};
-
-if (detached) {
-  document.body.classList.add("detached");
-  browser.permissions.contains(ALL).then((yes) => { $("allow").hidden = yes; });
-  browser.windows.onFocusChanged.addListener(async (id) => {
-    if (id === browser.windows.WINDOW_ID_NONE)
-      return;
-    const w = await browser.windows.get(id);
-    if (w.type === "normal") {
-      browserWindow = id;
-      refresh();
-    }
-  });
-  browser.tabs.onActivated.addListener(({windowId}) => {
-    if (windowId === browserWindow)
-      refresh();
-  });
-  setInterval(refresh, 1000);
-}
+// the popup closes when it loses the focus: 📌 keeps its controls in the page
+$("pin").onclick = async () => { const r = await run("panel"); if (r && r.ok) done(); };
 
 (async () => {
   await fillLanguages();
