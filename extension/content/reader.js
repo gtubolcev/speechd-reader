@@ -48,6 +48,30 @@ function blockOf(node) {
   return el || document.body;
 }
 
+/*
+ * The box a text node sits in inside its block: a list item, an
+ * inline-block, or an item of a flex/grid row. Menus put their items next to
+ * each other with no space in the source ("<li>A</li><li>B</li>"); the screen
+ * shows a gap, the text has none ("AB"). Returns [box, item]: item is true
+ * for list and flex/grid items, which read as separate phrases.
+ */
+function boxOf(node, block) {
+  let el = node.parentElement;
+  while (el && el !== block) {
+    if (el.tagName === "LI" || el.tagName === "TD" || el.tagName === "TH")
+      return [el, true];
+    const d = getComputedStyle(el).display;
+    const parent = el.parentElement;
+    const pd = parent ? getComputedStyle(parent).display : "";
+    if (/(^|-)(flex|grid)$/.test(pd))
+      return [el, true];
+    if (/^inline-(block|flex|grid|table)$/.test(d))
+      return [el, false];
+    el = parent;
+  }
+  return [null, false];
+}
+
 function visible(el) {
   return el.checkVisibility
     ? el.checkVisibility({visibilityProperty: true, opacityProperty: true})
@@ -107,9 +131,22 @@ function collectUnits(root, accept, range) {
     if (!cur || cur.block !== block) {
       if (cur && !cur.parts.every((p) => !p.text.trim()))
         units.push(cur);
-      cur = {block, parts: []};
+      cur = {block, parts: [], box: null};
     }
-    cur.parts.push({node: n, start, text: n.nodeValue.slice(start, end)});
+    const text = n.nodeValue.slice(start, end);
+    const [box, item] = boxOf(n, block);
+    if (cur.parts.length && box !== cur.box) {
+      // items of a menu or a row are phrases of their own; other boxes
+      // only need a space between them
+      const left = cur.parts[cur.parts.length - 1].text;
+      if (item || cur.item)
+        cur.parts.push({node: null, text: "\n"});
+      else if (!/\s$/.test(left) && !/^\s/.test(text))
+        cur.parts.push({node: null, text: " "});
+    }
+    cur.box = box;
+    cur.item = item;
+    cur.parts.push({node: n, start, text});
   }
   if (cur && !cur.parts.every((p) => !p.text.trim()))
     units.push(cur);
