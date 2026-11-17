@@ -338,6 +338,7 @@ const reader = {
   sent: [],                     // sentences in speechd: {id, s}
   nextId: 1,
   generation: 0,
+  requeue: 0,                   // timer: put lost sentences back
   paused: false,
   active: false,
 };
@@ -422,11 +423,36 @@ function onEvent(msg) {
     notice(msg.message || browser.i18n.getMessage("speechFailed"));
     return;
   }
+  if (msg.event === "lost") {
+    // the server went away (a crash on a settings reload): speak these
+    // again, in their order, once all the lost ones have come in
+    reader.sent[i].lost = true;
+    if (!reader.requeue)
+      reader.requeue = setTimeout(requeueLost, 50, reader.generation);
+    return;
+  }
   if (msg.event === "cancel") {
     // speechd dropped it (a screen reader spoke, another client): go on
   }
   reader.sent.splice(i, 1);
   fill(reader.generation);
+}
+
+const MAX_RETRIES = 3;
+
+function requeueLost(gen) {
+  reader.requeue = 0;
+  if (gen !== reader.generation)
+    return;
+  const lost = reader.sent.filter((x) => x.lost).map((x) => x.s);
+  reader.sent = reader.sent.filter((x) => !x.lost);
+  if (lost.some((s) => (s.tries = (s.tries || 0) + 1) > MAX_RETRIES)) {
+    stop();
+    notice(browser.i18n.getMessage("speechFailed"));
+    return;
+  }
+  reader.queue.unshift(...lost);
+  fill(gen);
 }
 
 /* ---------- a small notice in the page ---------- */

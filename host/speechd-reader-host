@@ -14,6 +14,8 @@ Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
        {"cmd": "rate", "value": -100..100 or null}   (null: the user's default)
        {"cmd": "hello"}
   out: {"event": "begin"|"end"|"cancel", "id": N}
+       {"event": "lost", "id": N}   (the server went away before N ended:
+                                     speak it again, a new server answers)
        {"event": "hello", "version": "...", "rate": R}
        {"event": "error", "id": N or null, "message": "..."}
 """
@@ -37,6 +39,30 @@ out_lock = threading.Lock()
 # it opens; after the user changes them and the server reloads, only a new
 # connection gets them. The settings dialog writes the file, then reloads.
 SETTLE = 3.0    # seconds the file must be old: the reload comes after the write
+REPLY_TIMEOUT = 15.0    # a server that is alive answers a command at once
+WATCH_INTERVAL = 0.5    # how often to look whether the connection still lives
+
+
+def patch_speechd(speechd):
+    """python3-speechd waits for a reply without a limit: when the server
+    dies between its check and the wait (a crash on a reload), the caller
+    hangs for ever. Wait in slices, and give up when the reader is gone."""
+    conn_class = speechd.client._SSIP_Connection
+
+    def _recv_response(self):
+        deadline = time.monotonic() + REPLY_TIMEOUT
+        while not self._ssip_reply_semaphore.acquire(timeout=0.2):
+            if not self._communication_thread.is_alive() or time.monotonic() > deadline:
+                raise speechd.SSIPCommunicationError("Speech Dispatcher does not answer")
+        return self._com_buffer.pop(0)
+
+    conn_class._recv_response = _recv_response
+
+
+def connection_alive(client):
+    conn = getattr(client, "_conn", None)
+    thread = getattr(conn, "_communication_thread", None)
+    return thread is None or thread.is_alive()
 
 
 def config_files():
@@ -106,12 +132,32 @@ def speechd_language(tag):
 class Speaker:
     def __init__(self):
         import speechd
+        try:
+            import speechd.client
+        except ImportError:
+            pass
         self.speechd = speechd
+        if hasattr(getattr(speechd, "client", None), "_SSIP_Connection"):
+            patch_speechd(speechd)
         self.client = None
         self.lock = threading.Lock()
         self.rate = None
         self.stamp = None
         self.outstanding = set()    # ids spoken and not yet ended
+        threading.Thread(target=self.watch, daemon=True).start()
+
+    def watch(self):
+        """The server crashed or quit: tell which utterances were lost, so
+        the extension speaks them again (a new server starts on demand)."""
+        while True:
+            time.sleep(WATCH_INTERVAL)
+            with self.lock:
+                if self.client is None or connection_alive(self.client):
+                    continue
+                lost = sorted(self.outstanding)
+                self.drop()
+            for msg_id in lost:
+                send({"event": "lost", "id": msg_id})
 
     def connect(self):
         if self.client is not None and not self.outstanding:
@@ -145,7 +191,10 @@ class Speaker:
             try:
                 return fn(self.connect())
             except (self.speechd.SSIPCommunicationError, OSError, BrokenPipeError):
+                lost = sorted(self.outstanding)
                 self.drop()
+                for msg_id in lost:
+                    send({"event": "lost", "id": msg_id})
                 return fn(self.connect())
 
     def speak(self, msg_id, text, lang):

@@ -114,6 +114,61 @@ def test_config_change_reconnects():
     sp.speak(7, "g", "en")
     assert log.count(("connect",)) == 4, log
 
+def test_server_crash():
+    """The server dies with utterances in it: they come back as lost, and
+    the next speak opens a new connection."""
+    import threading, time
+    out = io.BytesIO()
+    sys.stdout = types.SimpleNamespace(buffer=out)
+    try:
+        host.WATCH_INTERVAL = 0.05
+        sp = host.Speaker()
+        sp.stamp = host.config_stamp()
+        held = []
+        class Silent(FakeClient):
+            def speak(self, text, callback=None, event_types=None):
+                log.append(("speak", text)); held.append(callback)
+        fake.SSIPClient = Silent
+        log.clear()
+        sp.speak(1, "a", "en"); sp.speak(2, "b", "en")
+        assert sp.outstanding == {1, 2}
+        dead = threading.Thread(target=lambda: None); dead.start(); dead.join()
+        sp.client._conn = types.SimpleNamespace(_communication_thread=dead)
+        time.sleep(0.3)
+        assert sp.client is None and not sp.outstanding
+        sp.speak(3, "a", "en")
+        assert log.count(("connect",)) == 2, log
+    finally:
+        sys.stdout = sys.__stdout__
+        fake.SSIPClient = FakeClient
+    data, ev = out.getvalue(), []
+    while data:
+        (n,) = struct.unpack("=I", data[:4]); ev.append(json.loads(data[4:4+n])); data = data[4+n:]
+    assert ev == [{"event": "lost", "id": 1}, {"event": "lost", "id": 2}], ev
+
+def test_reply_timeout():
+    """A reply that never comes: the wait ends instead of hanging."""
+    import threading, time
+    conn_class = type("C", (), {})
+    fake.client = types.SimpleNamespace(_SSIP_Connection=conn_class)
+    host.patch_speechd(fake)
+    c = conn_class()
+    c._ssip_reply_semaphore = threading.Semaphore(0)
+    c._com_buffer = []
+    stop = threading.Event()
+    c._communication_thread = threading.Thread(target=stop.wait); c._communication_thread.start()
+    t = threading.Timer(0.3, stop.set); t.start()
+    t0 = time.monotonic()
+    try:
+        c._recv_response()
+        assert False, "no error"
+    except fake.SSIPCommunicationError:
+        pass
+    assert time.monotonic() - t0 < 2
+    c._com_buffer.append((200, "OK", ())); c._ssip_reply_semaphore.release()
+    assert c._recv_response() == (200, "OK", ())
+    del fake.client
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"): fn(); print("ok", name)
