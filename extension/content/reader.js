@@ -269,6 +269,10 @@ async function langOf(unit, text) {
     const fixed = siteCorrections[found] || found;
     if (!d || !d.lang.toLowerCase().startsWith(fixed.split("-")[0].toLowerCase()))
       return fixed;
+  } else if (reader.lastLang) {
+    // too short or unclear to tell (">> ещё 3 мини-новости"): the language
+    // of the text read just before, not the browser's
+    return reader.lastLang;
   }
   return d ? d.lang : (document.documentElement.lang || navigator.language);
 }
@@ -401,6 +405,7 @@ const reader = {
   queue: [],                    // sentences of units already split
   sent: [],                     // sentences in speechd: {id, s}
   nextId: 1,
+  lastLang: null,               // of the unit read last: for short ones
   generation: 0,
   requeue: 0,                   // timer: put lost sentences back
   paused: false,
@@ -419,6 +424,7 @@ function stop(tell = true) {
   reader.units = [];
   reader.queue = [];
   reader.sent = [];
+  reader.lastLang = null;
   clearHighlight();
   panelUpdate();
   if (tell)
@@ -448,6 +454,7 @@ async function fill(gen) {
       const lang = await langOf(unit, text);
       if (gen !== reader.generation)
         return;
+      reader.lastLang = lang;
       reader.queue.push(...sentencesOf(unit, lang).map((s) => Object.assign(s, {unit})));
       continue;
     }
