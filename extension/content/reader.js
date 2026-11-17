@@ -279,7 +279,10 @@ function articleUnits() {
   const live = [];
   const index = new WeakMap();
   const clone = document.cloneNode(true);
-  // walk both trees in step: the clone has the same shape
+  // walk both trees in step: the clone has the same shape. Each element
+  // gets a mark of its own name: Readability drops wrappers by copying
+  // their attributes onto the child, and one shared name would lose the
+  // child's mark (bsky.app: the post text, under a wrapper div)
   const a = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_ELEMENT);
   const b = document.createTreeWalker(clone.documentElement, NodeFilter.SHOW_ELEMENT);
   let x = a.currentNode, y = b.currentNode;
@@ -287,7 +290,7 @@ function articleUnits() {
     if (x.tagName !== y.tagName)
       break;                                  // the page changed under us
     index.set(x, live.length);
-    y.setAttribute("data-sdr", live.length);
+    y.setAttribute("data-sdr-" + live.length, "");
     live.push(x);
     x = a.nextNode();
     y = b.nextNode();
@@ -306,8 +309,10 @@ function articleUnits() {
   if (!article || !article.content)
     return null;
   const kept = new Set();
-  for (const el of article.content.querySelectorAll("[data-sdr]"))
-    kept.add(Number(el.getAttribute("data-sdr")));
+  for (const el of [article.content, ...article.content.querySelectorAll("*")])
+    for (const name of el.getAttributeNames())
+      if (name.startsWith("data-sdr-"))
+        kept.add(Number(name.slice(9)));
   if (!kept.size)
     return null;
   const units = collectUnits(document.body, (t) => kept.has(index.get(t.parentElement)));

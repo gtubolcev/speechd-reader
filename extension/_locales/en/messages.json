@@ -74,7 +74,7 @@
     "message": "Read the whole page"
   },
   "popPageTitle": {
-    "message": "All the visible text, without menus and side bars"
+    "message": "All the visible text, also menus, header and footer"
   },
   "popLang": {
     "message": "Language"
