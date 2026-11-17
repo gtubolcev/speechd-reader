@@ -31,11 +31,33 @@ const IN_FLIGHT = 2;          // sentences queued in speechd ahead
 
 /* ---------- the text model ---------- */
 
+/*
+ * A drop cap: the first letter of a paragraph in a box of its own, floated
+ * or inline-block ("<span>O</span><small>n November</small>"). It is part of
+ * the first word, so it must not start a block or a phrase of its own.
+ */
+function isDropCap(el) {
+  const own = el.textContent;
+  if (!/^\s*\p{L}{1,2}\s*$/u.test(own) || /\s$/u.test(own))
+    return false;
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  w.currentNode = el;
+  for (let t = w.nextNode(); t; t = w.nextNode()) {
+    if (el.contains(t))
+      continue;
+    return /^\p{L}/u.test(t.nodeValue);  // the word goes on: no space
+  }
+  return false;
+}
+
 const displayCache = new WeakMap();
 function isBlock(el) {
   let d = displayCache.get(el);
   if (d === undefined) {
-    d = getComputedStyle(el).display;
+    const cs = getComputedStyle(el);
+    d = cs.display;
+    if (cs.float !== "none" && el !== document.body && isDropCap(el))
+      d = "inline";
     displayCache.set(el, d);
   }
   return !(d.startsWith("inline") || d === "contents" || d === "ruby" || d === "ruby-text");
@@ -65,7 +87,7 @@ function boxOf(node, block) {
     const pd = parent ? getComputedStyle(parent).display : "";
     if (/(^|-)(flex|grid)$/.test(pd))
       return [el, true];
-    if (/^inline-(block|flex|grid|table)$/.test(d))
+    if (/^inline-(block|flex|grid|table)$/.test(d) && !isDropCap(el))
       return [el, false];
     el = parent;
   }
