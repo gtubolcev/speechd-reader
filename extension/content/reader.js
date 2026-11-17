@@ -329,9 +329,10 @@ function firstHeading(block) {
   return null;
 }
 
-/* without an article: the visible text outside navigation and asides */
-function pageUnits(root = document.body) {
-  return collectUnits(root, (t) => !t.parentElement.closest(NOT_ARTICLE));
+/* without an article: the visible text outside navigation and asides;
+ * @all: everything, also menus, header and footer ("Read the whole page") */
+function pageUnits(root = document.body, all = false) {
+  return collectUnits(root, all ? null : (t) => !t.parentElement.closest(NOT_ARTICLE));
 }
 
 function selectionUnits() {
@@ -354,7 +355,7 @@ function unitsFrom(el) {
   if (i < 0)
     i = list.findIndex((u) => el.compareDocumentPosition(u.block) & Node.DOCUMENT_POSITION_FOLLOWING);
   if (i < 0) {
-    const own = pageUnits(document.body);
+    const own = pageUnits(document.body, true);
     i = own.findIndex((u) => u.block === el || el.contains(u.block) || u.block.contains(el) ||
                              el.compareDocumentPosition(u.block) & Node.DOCUMENT_POSITION_FOLLOWING);
     return i < 0 ? null : own.slice(i);
@@ -1001,7 +1002,7 @@ async function act(msg) {
     return start(el ? unitsFrom(el) : null);
   }
   case "page":
-    return start(pageUnits());
+    return start(pageUnits(document.body, true));
   case "pick-element":
     pickerStart();
     return {ok: true};
