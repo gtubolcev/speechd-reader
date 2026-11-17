@@ -609,17 +609,38 @@ function hoverPlace(block) {
   hover.button.hidden = false;
 }
 
+/* the pointer is on the way from the paragraph to its button */
+function nearButton(x, y) {
+  if (!hover.block || hover.button.hidden)
+    return false;
+  const b = hover.button.getBoundingClientRect();
+  const r = hover.block.getBoundingClientRect();
+  const left = Math.min(b.left, r.left) - 8, right = Math.max(b.right, r.right) + 8;
+  const top = Math.min(b.top, r.top) - 8, bottom = Math.max(b.bottom, r.bottom) + 8;
+  return x >= left && x <= right && y >= top && y <= bottom;
+}
+
 function onHoverMove(e) {
-  if (picker.on || e.target === hover.button)
+  if (picker.on)
     return;
   clearTimeout(hover.timer);
+  if (e.target === hover.button)
+    return;
+  const near = nearButton(e.clientX, e.clientY);
   hover.timer = setTimeout(() => {
     const blocks = hoverBlocks();
     let el = document.elementFromPoint(e.clientX, e.clientY);
     while (el && !blocks.has(el))
       el = el.parentElement;
-    hoverPlace(el);
-  }, 80);
+    if (near) {
+      // between the paragraph and its button: keep it, and give the pointer
+      // time to get there over gaps and neighbours
+      if (el !== hover.block)
+        hover.timer = setTimeout(() => hoverPlace(null), 700);
+    } else {
+      hoverPlace(el);
+    }
+  }, near ? 150 : 80);
 }
 
 function hoverStart() {
@@ -631,6 +652,7 @@ function hoverStart() {
   hover.button.textContent = "▶";
   hover.button.title = "Read aloud from here";
   hover.button.hidden = true;
+  hover.button.addEventListener("mouseenter", () => clearTimeout(hover.timer));
   hover.button.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();

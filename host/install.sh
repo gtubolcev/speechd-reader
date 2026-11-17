@@ -10,16 +10,13 @@ if [ "${1:-}" = --system ]; then
     install -D -m 755 "$here/speechd-reader-host" "$bin"
 else
     bin="$here/speechd-reader-host"
-    # Firefox 147+ keeps its files in XDG_CONFIG_HOME when ~/.mozilla is absent
-    xdg="${XDG_CONFIG_HOME:-$HOME/.config}/mozilla"
-    if [ -d "$HOME/.mozilla" ] || [ ! -d "$xdg" ]; then
-        dir="$HOME/.mozilla/native-messaging-hosts"
-    else
-        dir="$xdg/native-messaging-hosts"
-    fi
+    # Firefox still looks in ~/.mozilla even when its profiles moved to
+    # XDG_CONFIG_HOME (seen with 160); the XDG dir is for later versions
+    dir="$HOME/.mozilla/native-messaging-hosts ${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"
 fi
-mkdir -p "$dir"
-cat > "$dir/speechd_reader.json" <<JSON
+for dir in $dir; do
+    mkdir -p "$dir"
+    cat > "$dir/speechd_reader.json" <<JSON
 {
   "name": "speechd_reader",
   "description": "Speech Dispatcher for the Speech Dispatcher Reader extension",
@@ -28,4 +25,5 @@ cat > "$dir/speechd_reader.json" <<JSON
   "allowed_extensions": ["speechd-reader@tuboltsev.github.io"]
 }
 JSON
-echo "registered $dir/speechd_reader.json -> $bin"
+    echo "registered $dir/speechd_reader.json -> $bin"
+done
