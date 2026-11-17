@@ -68,6 +68,7 @@ async function loadSettings() {
   $("rate").value = settings.rate === null ? 0 : settings.rate;
   $("rate").disabled = settings.rate === null;
   $("rate-value").textContent = settings.rate === null ? "" : settings.rate;
+  syncPin();
 }
 
 async function save(change) {
@@ -95,9 +96,14 @@ $("buttons").onchange = () => {
   save({buttons: $("buttons").checked});
   run("buttons", {on: $("buttons").checked});
 };
+// 📌 and the checkbox are one switch: 📌 is pressed while the panel is on
+function syncPin() {
+  $("pin").setAttribute("aria-pressed", String($("panel").checked));
+}
 $("panel").onchange = () => {
   save({panel: $("panel").checked});
-  run($("panel").checked ? "panel" : "panel-hide");
+  syncPin();
+  return run($("panel").checked ? "panel" : "panel-hide");
 };
 // the request must come straight from the click: no await before it
 const ALL_SITES = {origins: ["<all_urls>"]};
@@ -108,8 +114,13 @@ $("allsites").onchange = () => {
     .catch((e) => { $("allsites").checked = !want; status(String(e.message || e), true); });
 };
 $("rate-default").onchange = saveRate;
-// the popup closes when it loses the focus: 📌 keeps its controls in the page
-$("pin").onclick = async () => { const r = await run("panel"); if (r && r.ok) done(); };
+// the popup closes when it loses the focus: 📌 keeps its controls in the
+// page, and takes them away again when they are there
+$("pin").onclick = async () => {
+  $("panel").checked = !$("panel").checked;
+  const r = await $("panel").onchange();
+  if ($("panel").checked && r && r.ok) done();
+};
 
 (async () => {
   await fillLanguages();

@@ -11,3 +11,7 @@ button { font: inherit; padding: 5px 8px; }
 #status { min-height: 1.2em; margin: 8px 0 0; color: GrayText; }
 #status.error { color: #d70022; }
 [hidden] { display: none !important; }
+#pin[aria-pressed="true"] { background: #0061e0; border-color: #0061e0; }
+@media (prefers-color-scheme: dark) {
+  #pin[aria-pressed="true"] { background: #00ddff; border-color: #00ddff; }
+}
