@@ -19,10 +19,12 @@ Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
 """
 
 import json
+import os
 import re
 import struct
 import sys
 import threading
+import time
 
 VERSION = "0.1"
 MAX_MESSAGE = 1024 * 1024      # Firefox sends at most 4 GB; we take 1 MB
@@ -30,6 +32,35 @@ MAX_TEXT = 100_000             # characters in one utterance
 LANG_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8})*$")
 
 out_lock = threading.Lock()
+
+# Speech Dispatcher gives a connection its defaults (module, voice, ...) when
+# it opens; after the user changes them and the server reloads, only a new
+# connection gets them. The settings dialog writes the file, then reloads.
+SETTLE = 3.0    # seconds the file must be old: the reload comes after the write
+
+
+def config_files():
+    home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return (os.path.join(home, "speech-dispatcher", "speechd.conf"),
+            "/etc/speech-dispatcher/speechd.conf")
+
+
+def path_age(path):
+    try:
+        return time.time() - os.stat(path).st_mtime
+    except OSError:
+        return float("inf")
+
+
+def config_stamp():
+    stamp = []
+    for path in config_files():
+        try:
+            st = os.stat(path)
+            stamp.append((st.st_mtime_ns, st.st_ino, st.st_size))
+        except OSError:
+            stamp.append(None)
+    return tuple(stamp)
 
 
 def send(obj):
@@ -71,9 +102,20 @@ class Speaker:
         self.client = None
         self.lock = threading.Lock()
         self.rate = None
+        self.stamp = None
+        self.outstanding = set()    # ids spoken and not yet ended
 
     def connect(self):
+        if self.client is not None and not self.outstanding:
+            stamp = config_stamp()
+            if stamp != self.stamp:
+                self.drop()
         if self.client is None:
+            stamp = config_stamp()
+            # a file written just now may not be read by the server yet:
+            # keep the old stamp, so the next start connects again
+            fresh = any(path_age(p) < SETTLE for p in config_files())
+            self.stamp = None if fresh else stamp
             self.client = self.speechd.SSIPClient("speechd-reader", "browser",
                                                   autospawn=True)
             if self.rate is not None:
@@ -87,6 +129,7 @@ class Speaker:
             except Exception:
                 pass
             self.client = None
+        self.outstanding.clear()     # a closed connection sends no more events
 
     def call(self, fn):
         """fn(client), reconnecting once if the server went away."""
@@ -101,6 +144,8 @@ class Speaker:
         ct = self.speechd.CallbackType
 
         def callback(kind, index_mark=None):
+            if kind in (ct.END, ct.CANCEL):
+                self.outstanding.discard(msg_id)
             if kind in (ct.BEGIN, ct.END, ct.CANCEL):
                 send({"event": kind, "id": msg_id})
 
@@ -108,8 +153,14 @@ class Speaker:
             language = speechd_language(lang)
             if language is not None:
                 client.set_language(language)
-            client.speak(text, callback=callback,
-                         event_types=(ct.BEGIN, ct.END, ct.CANCEL))
+            # before speak(): the end may come before speak() returns
+            self.outstanding.add(msg_id)
+            try:
+                client.speak(text, callback=callback,
+                             event_types=(ct.BEGIN, ct.END, ct.CANCEL))
+            except Exception:
+                self.outstanding.discard(msg_id)
+                raise
 
         self.call(do)
 

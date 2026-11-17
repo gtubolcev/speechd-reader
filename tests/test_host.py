@@ -82,6 +82,38 @@ def test_rate_and_stop():
     run({"cmd": "rate", "value": 30}, {"cmd": "stop"}, {"cmd": "rate", "value": None})
     assert ("rate", 30) in log and ("cancel",) in log and ("close",) in log
 
+def test_config_change_reconnects():
+    import tempfile, time
+    d = tempfile.mkdtemp()
+    conf = os.path.join(d, "speechd.conf")
+    with open(conf, "w") as f: f.write("DefaultModule a\n")
+    old = time.time() - 60
+    os.utime(conf, (old, old))
+    host.config_files = lambda: (conf,)
+    sp = host.Speaker()
+    log.clear()
+    sp.speak(1, "a", "en"); sp.speak(2, "b", "en")
+    assert log.count(("connect",)) == 1, log
+    # still speaking: the change waits for the next start
+    sp.outstanding.add(99)
+    with open(conf, "w") as f: f.write("DefaultModule b\n")
+    os.utime(conf, (old + 1, old + 1))
+    sp.speak(3, "c", "en")
+    assert log.count(("connect",)) == 1, log
+    sp.outstanding.discard(99)
+    sp.speak(4, "d", "en")
+    assert log.count(("connect",)) == 2 and ("close",) in log, log
+    sp.speak(5, "e", "en")
+    assert log.count(("connect",)) == 2, log
+    # written just now: the server may not have reloaded yet, so the start
+    # after that connects once more
+    with open(conf, "w") as f: f.write("DefaultModule c\n")
+    sp.speak(6, "f", "en")
+    assert log.count(("connect",)) == 3, log
+    os.utime(conf, (old + 2, old + 2))
+    sp.speak(7, "g", "en")
+    assert log.count(("connect",)) == 4, log
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"): fn(); print("ok", name)
