@@ -241,13 +241,20 @@ function sentencesOf(unit, lang) {
 let langOverride = null;          // set from the popup for this page
 let siteCorrections = {};          // detected -> corrected, per site
 
-async function detect(text) {
+/*
+ * @loose: also an unreliable answer when one language has at least half the
+ * text. For the whole text to read: headlines, dates and names mixed in
+ * (opennet.ru: "ru 57%, sr 18%") make it unreliable, yet clear enough.
+ */
+async function detect(text, loose = false) {
   if (!browser.i18n.detectLanguage || text.length < 30)
     return null;
   try {
     const r = await browser.i18n.detectLanguage(text.slice(0, 2000));
     const best = r.languages.find((l) => l.language !== "und");
-    return r.isReliable && best ? best.language : null;
+    if (!best)
+      return null;
+    return r.isReliable || (loose && best.percentage >= 50) ? best.language : null;
   } catch (e) {
     return null;
   }
@@ -453,7 +460,7 @@ async function start(units) {
       break;
     sample += unitText(u).text + "\n";
   }
-  const pageLang = await detect(sample);
+  const pageLang = await detect(sample, true);
   if (gen !== reader.generation)
     return {ok: true, units: units.length};
   reader.pageLang = pageLang && (siteCorrections[pageLang] || pageLang);
