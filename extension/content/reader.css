@@ -35,3 +35,22 @@
   white-space: normal;
   max-width: 90vw;
 }
+.speechd-reader-play {
+  position: fixed !important;
+  z-index: 2147483645 !important;
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #8f8f9d !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  color: #0a84ff !important;
+  font: 11px/22px system-ui, sans-serif !important;
+  text-align: center !important;
+  cursor: pointer !important;
+  opacity: 0.85;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+}
+.speechd-reader-play:hover { opacity: 1; }
+.speechd-reader-play[hidden] { display: none !important; }

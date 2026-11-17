@@ -569,6 +569,92 @@ function pickerEnd() {
   picker.trail = [];
 }
 
+/* ---------- a "read from here" button next to the paragraph under the mouse ---------- */
+
+const hover = {on: false, button: null, blocks: null, block: null, timer: 0};
+
+function hoverBlocks() {
+  if (!hover.blocks) {
+    const units = articleUnits() || pageUnits();
+    hover.blocks = new Set(units.map((u) => u.block));
+  }
+  return hover.blocks;
+}
+
+function hoverPlace(block) {
+  hover.block = block;
+  if (!block) {
+    hover.button.hidden = true;
+    return;
+  }
+  const r = block.getBoundingClientRect();
+  const size = 24;
+  // in the left margin, else just after the paragraph's last line, else
+  // over the paragraph's first letter
+  let left = r.left - size - 4, top = r.top;
+  if (left < 2) {
+    const text = document.createRange();
+    text.selectNodeContents(block);
+    const lines = text.getClientRects();
+    const last = lines[lines.length - 1];
+    if (last && last.right + size + 8 <= document.documentElement.clientWidth) {
+      left = last.right + 6;
+      top = last.top + (last.height - size) / 2;
+    } else {
+      left = Math.max(r.left, 0) + 2;
+    }
+  }
+  hover.button.style.left = left + "px";
+  hover.button.style.top = Math.max(top, 0) + "px";
+  hover.button.hidden = false;
+}
+
+function onHoverMove(e) {
+  if (picker.on || e.target === hover.button)
+    return;
+  clearTimeout(hover.timer);
+  hover.timer = setTimeout(() => {
+    const blocks = hoverBlocks();
+    let el = document.elementFromPoint(e.clientX, e.clientY);
+    while (el && !blocks.has(el))
+      el = el.parentElement;
+    hoverPlace(el);
+  }, 80);
+}
+
+function hoverStart() {
+  if (hover.on)
+    return;
+  hover.on = true;
+  hover.button = document.createElement("button");
+  hover.button.className = "speechd-reader-ui speechd-reader-play";
+  hover.button.textContent = "▶";
+  hover.button.title = "Read aloud from here";
+  hover.button.hidden = true;
+  hover.button.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const block = hover.block;
+    hoverPlace(null);
+    if (block)
+      start(unitsFrom(block));
+  });
+  document.documentElement.append(hover.button);
+  document.addEventListener("mousemove", onHoverMove, {passive: true});
+  window.addEventListener("scroll", () => hoverPlace(null), {passive: true});
+  // the page may load more text later
+  new MutationObserver(() => { hover.blocks = null; })
+    .observe(document.body, {childList: true, subtree: true});
+}
+
+function hoverStop() {
+  if (!hover.on)
+    return;
+  hover.on = false;
+  document.removeEventListener("mousemove", onHoverMove);
+  hover.button.remove();
+}
+
 /* ---------- messages ---------- */
 
 async function act(msg) {
@@ -602,8 +688,11 @@ async function act(msg) {
   case "set-lang":
     langOverride = msg.lang || null;
     return {ok: true};
+  case "buttons":
+    if (msg.on) hoverStart(); else hoverStop();
+    return {ok: true};
   case "state":
-    return {active: reader.active, paused: reader.paused, picking: picker.on,
+    return {active: reader.active, paused: reader.paused, picking: picker.on, buttons: hover.on,
             lang: langOverride,
             pageLang: document.documentElement.lang || null};
   }
@@ -620,6 +709,11 @@ browser.runtime.onMessage.addListener((msg) => {
   if (msg.type === "stopped")
     stop(false);
 });
+
+browser.storage.local.get("settings").then((r) => {
+  if (!r.settings || r.settings.buttons !== false)
+    hoverStart();
+}).catch(() => hoverStart());
 
 window.__speechdReader = {act, collectUnits, articleUnits, pageUnits, sentencesOf, unitText};
 })();

@@ -48,17 +48,23 @@ async function fillLanguages() {
 
 async function loadSettings() {
   const {settings = {rate: null}} = await browser.storage.local.get("settings");
+  $("buttons").checked = settings.buttons !== false;
   $("rate-default").checked = settings.rate === null;
   $("rate").value = settings.rate === null ? 0 : settings.rate;
   $("rate").disabled = settings.rate === null;
   $("rate-value").textContent = settings.rate === null ? "" : settings.rate;
 }
 
+async function save(change) {
+  const {settings = {rate: null}} = await browser.storage.local.get("settings");
+  await browser.storage.local.set({settings: Object.assign(settings, change)});
+}
+
 function saveRate() {
   const rate = $("rate-default").checked ? null : Number($("rate").value);
   $("rate").disabled = rate === null;
   $("rate-value").textContent = rate === null ? "" : rate;
-  browser.storage.local.set({settings: {rate}});
+  save({rate});
 }
 
 $("auto").onclick = async () => { const r = await run("auto"); if (r && r.ok) window.close(); };
@@ -68,6 +74,10 @@ $("pause").onclick = async () => { await run("toggle-pause"); refresh(); };
 $("stop").onclick = async () => { await run("stop"); refresh(); };
 $("lang").onchange = () => run("set-lang", {lang: $("lang").value});
 $("rate").oninput = saveRate;
+$("buttons").onchange = () => {
+  save({buttons: $("buttons").checked});
+  run("buttons", {on: $("buttons").checked});
+};
 $("rate-default").onchange = saveRate;
 
 (async () => {

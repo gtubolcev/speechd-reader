@@ -68,14 +68,20 @@ function onHostMessage(msg) {
   touch();
 }
 
-function stopAll() {
+/* @except: the tab that asked, which has stopped already */
+function stopAll(except = null) {
   if (port)
     port.postMessage({cmd: "stop"});
-  // the host answers with cancel events; drop them already here
-  for (const {tab, id} of pending.values())
-    toTab(tab, {type: "event", event: "cancel", id});
+  // the host answers with cancel events, which the tab would take for
+  // "speechd dropped this one, go on": tell it to stop instead
+  const tabs = new Set([...pending.values()].map((p) => p.tab));
+  if (speakingTab !== null)
+    tabs.add(speakingTab);
   pending.clear();
   speakingTab = null;
+  tabs.delete(except);
+  for (const tab of tabs)
+    toTab(tab, {type: "stopped"});
 }
 
 /* settings shared with the popup */
@@ -88,7 +94,7 @@ browser.storage.onChanged.addListener((changes) => {
   if (!changes.settings)
     return;
   const old = currentSettings.rate;
-  currentSettings = Object.assign({rate: null}, changes.settings.newValue);
+  currentSettings = Object.assign({rate: null, buttons: true}, changes.settings.newValue);
   if (port && currentSettings.rate !== old)
     port.postMessage({cmd: "rate", value: currentSettings.rate});
 });
@@ -100,9 +106,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     if (tab === null || typeof msg.text !== "string")
       return;
     if (speakingTab !== null && speakingTab !== tab) {
-      const old = speakingTab;
       stopAll();
-      toTab(old, {type: "stopped"});
     }
     speakingTab = tab;
     const id = nextId++;
@@ -118,7 +122,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   case "stop":
     if (tab === null || tab === speakingTab)
-      stopAll();
+      stopAll(tab);
     return;
   case "pause":
   case "resume":
@@ -128,7 +132,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   case "status":
     return Promise.resolve({speakingTab, lastError});
   case "run":         // from the popup
-    return runInTab(msg.tab, msg.action, {lang: msg.lang});
+    return runInTab(msg.tab, msg.action, {lang: msg.lang, on: msg.on});
   }
 });
 
