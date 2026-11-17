@@ -4,6 +4,12 @@
 const $ = (id) => document.getElementById(id);
 let tab = null;
 
+document.documentElement.lang = browser.i18n.getUILanguage();
+for (const el of document.querySelectorAll("[data-i18n]"))
+  el.textContent = browser.i18n.getMessage(el.dataset.i18n);
+for (const el of document.querySelectorAll("[data-i18n-title]"))
+  el.title = browser.i18n.getMessage(el.dataset.i18nTitle);
+
 function status(text, error = false) {
   $("status").textContent = text || "";
   $("status").classList.toggle("error", error);

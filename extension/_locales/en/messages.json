@@ -1,0 +1,94 @@
+{
+  "extName": {
+    "message": "Speech Dispatcher Reader"
+  },
+  "extDescription": {
+    "message": "Reads web pages aloud through the system's Speech Dispatcher: the voice for each language comes from your speech settings."
+  },
+  "actionTitle": {
+    "message": "Read aloud"
+  },
+  "cmdReadArticle": {
+    "message": "Read the article (or the selection)"
+  },
+  "cmdPick": {
+    "message": "Choose the part of the page to read"
+  },
+  "cmdPause": {
+    "message": "Pause or resume"
+  },
+  "cmdStop": {
+    "message": "Stop reading"
+  },
+  "menuSelection": {
+    "message": "Read aloud"
+  },
+  "menuFromHere": {
+    "message": "Read aloud from here"
+  },
+  "menuArticle": {
+    "message": "Read the article aloud"
+  },
+  "menuPick": {
+    "message": "Choose what to read…"
+  },
+  "cantRead": {
+    "message": "This page can't be read: $ERR$",
+    "placeholders": {
+      "err": {
+        "content": "$1"
+      }
+    }
+  },
+  "nothingToRead": {
+    "message": "Nothing to read here"
+  },
+  "speechFailed": {
+    "message": "Speech failed"
+  },
+  "pickHelp": {
+    "message": "Click: read this part · Shift+click: read from here · Wheel or ↑↓: larger/smaller · ←→: neighbours · Esc: cancel"
+  },
+  "playTitle": {
+    "message": "Read aloud from here"
+  },
+  "popRead": {
+    "message": "Read"
+  },
+  "popReadTitle": {
+    "message": "The selection, or else the main text found as in Reader View"
+  },
+  "popPause": {
+    "message": "Pause / resume"
+  },
+  "popStop": {
+    "message": "Stop"
+  },
+  "popPick": {
+    "message": "Choose what to read…"
+  },
+  "popPickTitle": {
+    "message": "Choose a part of the page with the mouse or the keyboard"
+  },
+  "popPage": {
+    "message": "Read the whole page"
+  },
+  "popPageTitle": {
+    "message": "All the visible text, without menus and side bars"
+  },
+  "popLang": {
+    "message": "Language"
+  },
+  "popLangAuto": {
+    "message": "Automatic"
+  },
+  "popSpeed": {
+    "message": "Speed"
+  },
+  "popSpeedDefault": {
+    "message": "Speed from the speech settings"
+  },
+  "popButtons": {
+    "message": "▶ button next to paragraphs"
+  }
+}

@@ -358,7 +358,7 @@ function stop(tell = true) {
 async function start(units) {
   stop();
   if (!units || !units.length)
-    return {error: "Nothing to read here"};
+    return {error: browser.i18n.getMessage("nothingToRead")};
   reader.units = units;
   reader.unit = 0;
   reader.active = true;
@@ -413,7 +413,7 @@ function onEvent(msg) {
   }
   if (msg.event === "error") {
     stop(false);
-    notice(msg.message || "Speech failed");
+    notice(msg.message || browser.i18n.getMessage("speechFailed"));
     return;
   }
   if (msg.event === "cancel") {
@@ -544,8 +544,7 @@ function pickerStart() {
   picker.label.className = "speechd-reader-ui speechd-reader-pick-label";
   const help = document.createElement("div");
   help.className = "speechd-reader-ui speechd-reader-notice";
-  help.textContent = "Click: read this part · Shift+click: read from here · " +
-                     "Wheel or ↑↓: larger/smaller · ←→: neighbours · Esc: cancel";
+  help.textContent = browser.i18n.getMessage("pickHelp");
   picker.help = help;
   document.documentElement.append(picker.box, picker.label, help);
   for (const [t, f] of PICK_EVENTS)
@@ -650,7 +649,7 @@ function hoverStart() {
   hover.button = document.createElement("button");
   hover.button.className = "speechd-reader-ui speechd-reader-play";
   hover.button.textContent = "▶";
-  hover.button.title = "Read aloud from here";
+  hover.button.title = browser.i18n.getMessage("playTitle");
   hover.button.hidden = true;
   hover.button.addEventListener("mouseenter", () => clearTimeout(hover.timer));
   hover.button.addEventListener("click", (e) => {

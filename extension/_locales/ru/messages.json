@@ -1,0 +1,94 @@
+{
+  "extName": {
+    "message": "Speech Dispatcher Reader"
+  },
+  "extDescription": {
+    "message": "Читает веб-страницы вслух через системный Speech Dispatcher: голос для каждого языка берётся из ваших настроек речи."
+  },
+  "actionTitle": {
+    "message": "Читать вслух"
+  },
+  "cmdReadArticle": {
+    "message": "Читать статью (или выделенное)"
+  },
+  "cmdPick": {
+    "message": "Выбрать часть страницы для чтения"
+  },
+  "cmdPause": {
+    "message": "Пауза / продолжить"
+  },
+  "cmdStop": {
+    "message": "Остановить чтение"
+  },
+  "menuSelection": {
+    "message": "Читать вслух"
+  },
+  "menuFromHere": {
+    "message": "Читать вслух отсюда"
+  },
+  "menuArticle": {
+    "message": "Читать статью вслух"
+  },
+  "menuPick": {
+    "message": "Выбрать, что читать…"
+  },
+  "cantRead": {
+    "message": "Эту страницу нельзя прочитать: $ERR$",
+    "placeholders": {
+      "err": {
+        "content": "$1"
+      }
+    }
+  },
+  "nothingToRead": {
+    "message": "Здесь нечего читать"
+  },
+  "speechFailed": {
+    "message": "Ошибка синтеза речи"
+  },
+  "pickHelp": {
+    "message": "Клик: читать эту часть · Shift+клик: читать отсюда · Колесо или ↑↓: больше/меньше · ←→: соседи · Esc: отмена"
+  },
+  "playTitle": {
+    "message": "Читать вслух отсюда"
+  },
+  "popRead": {
+    "message": "Читать"
+  },
+  "popReadTitle": {
+    "message": "Выделенное, а если его нет — основной текст, как в режиме чтения"
+  },
+  "popPause": {
+    "message": "Пауза / продолжить"
+  },
+  "popStop": {
+    "message": "Стоп"
+  },
+  "popPick": {
+    "message": "Выбрать, что читать…"
+  },
+  "popPickTitle": {
+    "message": "Выбрать часть страницы мышью или клавиатурой"
+  },
+  "popPage": {
+    "message": "Читать всю страницу"
+  },
+  "popPageTitle": {
+    "message": "Весь видимый текст без меню и боковых колонок"
+  },
+  "popLang": {
+    "message": "Язык"
+  },
+  "popLangAuto": {
+    "message": "Автоматически"
+  },
+  "popSpeed": {
+    "message": "Скорость"
+  },
+  "popSpeedDefault": {
+    "message": "Скорость из настроек речи"
+  },
+  "popButtons": {
+    "message": "Кнопка ▶ у абзацев"
+  }
+}

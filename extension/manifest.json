@@ -1,21 +1,33 @@
 {
   "manifest_version": 3,
-  "name": "Speech Dispatcher Reader",
+  "name": "__MSG_extName__",
   "version": "0.1",
-  "description": "Reads web pages aloud through the system's Speech Dispatcher: the voice for each language comes from your speech settings.",
+  "description": "__MSG_extDescription__",
   "browser_specific_settings": {
     "gecko": {
       "id": "speechd-reader@tuboltsev.github.io",
       "strict_min_version": "128.0",
-      "data_collection_permissions": {"required": ["none"]}
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   },
-  "permissions": ["nativeMessaging", "activeTab", "scripting", "menus", "storage"],
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "scripting",
+    "menus",
+    "storage"
+  ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
-    "default_title": "Read aloud",
+    "default_title": "__MSG_actionTitle__",
     "default_popup": "popup/popup.html",
     "default_icon": "icons/speaker.svg"
   },
@@ -25,20 +37,29 @@
   },
   "commands": {
     "read-article": {
-      "suggested_key": { "default": "Alt+Shift+R" },
-      "description": "Read the article (or the selection)"
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "__MSG_cmdReadArticle__"
     },
     "pick-element": {
-      "suggested_key": { "default": "Alt+Shift+C" },
-      "description": "Choose the part of the page to read"
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
+      "description": "__MSG_cmdPick__"
     },
     "pause": {
-      "suggested_key": { "default": "Alt+Shift+P" },
-      "description": "Pause or resume"
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "__MSG_cmdPause__"
     },
     "stop": {
-      "suggested_key": { "default": "Alt+Shift+X" },
-      "description": "Stop reading"
+      "suggested_key": {
+        "default": "Alt+Shift+X"
+      },
+      "description": "__MSG_cmdStop__"
     }
-  }
+  },
+  "default_locale": "en"
 }

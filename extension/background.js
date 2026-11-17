@@ -159,17 +159,17 @@ async function runInTab(tab, action, extra = {}) {
   try {
     await inject(tab);
   } catch (e) {
-    return {error: "This page can't be read: " + e.message};
+    return {error: browser.i18n.getMessage("cantRead", e.message)};
   }
   return browser.tabs.sendMessage(tab, Object.assign({type: "action", action}, extra), {frameId: 0});
 }
 
 /* context menu: an event page must create it only once */
 browser.runtime.onInstalled.addListener(() => {
-  browser.menus.create({id: "read-selection", title: "Read aloud", contexts: ["selection"]});
-  browser.menus.create({id: "read-from-here", title: "Read aloud from here", contexts: ["page", "link", "image"]});
-  browser.menus.create({id: "read-article", title: "Read the article aloud", contexts: ["page"]});
-  browser.menus.create({id: "pick-element", title: "Choose what to read\u2026", contexts: ["page"]});
+  browser.menus.create({id: "read-selection", title: browser.i18n.getMessage("menuSelection"), contexts: ["selection"]});
+  browser.menus.create({id: "read-from-here", title: browser.i18n.getMessage("menuFromHere"), contexts: ["page", "link", "image"]});
+  browser.menus.create({id: "read-article", title: browser.i18n.getMessage("menuArticle"), contexts: ["page"]});
+  browser.menus.create({id: "pick-element", title: browser.i18n.getMessage("menuPick"), contexts: ["page"]});
 });
 
 browser.menus.onClicked.addListener((info, tab) => {
