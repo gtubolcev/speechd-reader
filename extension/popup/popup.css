@@ -1,0 +1,12 @@
+:root { color-scheme: light dark; }
+body { font: 13px system-ui, sans-serif; width: 260px; margin: 10px; }
+button { font: inherit; padding: 5px 8px; }
+.row { display: flex; gap: 6px; margin-bottom: 6px; }
+.main { flex: 1; font-weight: 600; }
+.wide { display: block; width: 100%; margin-bottom: 6px; text-align: start; }
+.field { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; }
+.field select, .field input { flex: 1; }
+.check { display: block; margin: 2px 0; }
+#rate-value { width: 2.5em; text-align: end; }
+#status { min-height: 1.2em; margin: 8px 0 0; color: GrayText; }
+#status.error { color: #d70022; }

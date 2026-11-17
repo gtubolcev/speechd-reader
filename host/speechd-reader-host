@@ -1,0 +1,181 @@
+#!/usr/bin/python3 -I
+# Copyright (C) 2026 Grigory Tuboltsev
+# SPDX-License-Identifier: MIT
+"""Native messaging host of the speechd-reader browser extension.
+
+Speaks text through Speech Dispatcher. It never chooses a module or a voice:
+each message only carries its language, so Speech Dispatcher uses the user's
+configuration (DefaultModule, LanguageDefaultModule, the module's voice for
+the language, DefaultRate, ...).
+
+Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
+  in:  {"cmd": "speak", "id": N, "text": "...", "lang": "uk"}
+       {"cmd": "stop"} | {"cmd": "pause"} | {"cmd": "resume"}
+       {"cmd": "rate", "value": -100..100 or null}   (null: the user's default)
+       {"cmd": "hello"}
+  out: {"event": "begin"|"end"|"cancel", "id": N}
+       {"event": "hello", "version": "...", "rate": R}
+       {"event": "error", "id": N or null, "message": "..."}
+"""
+
+import json
+import re
+import struct
+import sys
+import threading
+
+VERSION = "0.1"
+MAX_MESSAGE = 1024 * 1024      # Firefox sends at most 4 GB; we take 1 MB
+MAX_TEXT = 100_000             # characters in one utterance
+LANG_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8})*$")
+
+out_lock = threading.Lock()
+
+
+def send(obj):
+    data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+    with out_lock:
+        sys.stdout.buffer.write(struct.pack("=I", len(data)) + data)
+        sys.stdout.buffer.flush()
+
+
+def receive():
+    """The next message, or None at the end of the input."""
+    head = sys.stdin.buffer.read(4)
+    if len(head) < 4:
+        return None
+    (length,) = struct.unpack("=I", head)
+    if length > MAX_MESSAGE:
+        raise ValueError("message too long")
+    data = sys.stdin.buffer.read(length)
+    if len(data) < length:
+        return None
+    return json.loads(data.decode("utf-8"))
+
+
+def speechd_language(tag):
+    """'en-US' -> 'en', 'pt-BR' -> 'pt-br': the configs name plain languages,
+    regions only where they make a different language for the synthesizers."""
+    if not isinstance(tag, str) or not LANG_RE.match(tag):
+        return None
+    parts = tag.replace("_", "-").lower().split("-")
+    if parts[0] in ("pt", "zh") and len(parts) > 1 and len(parts[1]) == 2:
+        return parts[0] + "-" + parts[1]
+    return parts[0]
+
+
+class Speaker:
+    def __init__(self):
+        import speechd
+        self.speechd = speechd
+        self.client = None
+        self.lock = threading.Lock()
+        self.rate = None
+
+    def connect(self):
+        if self.client is None:
+            self.client = self.speechd.SSIPClient("speechd-reader", "browser",
+                                                  autospawn=True)
+            if self.rate is not None:
+                self.client.set_rate(self.rate)
+        return self.client
+
+    def drop(self):
+        if self.client is not None:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+
+    def call(self, fn):
+        """fn(client), reconnecting once if the server went away."""
+        with self.lock:
+            try:
+                return fn(self.connect())
+            except (self.speechd.SSIPCommunicationError, OSError, BrokenPipeError):
+                self.drop()
+                return fn(self.connect())
+
+    def speak(self, msg_id, text, lang):
+        ct = self.speechd.CallbackType
+
+        def callback(kind, index_mark=None):
+            if kind in (ct.BEGIN, ct.END, ct.CANCEL):
+                send({"event": kind, "id": msg_id})
+
+        def do(client):
+            language = speechd_language(lang)
+            if language is not None:
+                client.set_language(language)
+            client.speak(text, callback=callback,
+                         event_types=(ct.BEGIN, ct.END, ct.CANCEL))
+
+        self.call(do)
+
+    def set_rate(self, value):
+        self.rate = value
+        if value is None:
+            # back to DefaultRate: a new connection starts with it
+            with self.lock:
+                self.drop()
+        else:
+            self.call(lambda c: c.set_rate(value))
+
+
+def main():
+    speaker = Speaker()
+    try:
+        while True:
+            try:
+                msg = receive()
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as e:
+                send({"event": "error", "id": None, "message": str(e)})
+                break   # the stream is out of step
+            if msg is None:
+                break
+            if not isinstance(msg, dict):
+                continue
+            cmd = msg.get("cmd")
+            msg_id = msg.get("id")
+            try:
+                if cmd == "speak":
+                    text = msg.get("text")
+                    if not isinstance(msg_id, int) or not isinstance(text, str):
+                        raise ValueError("speak needs an integer id and a text")
+                    text = text.strip()[:MAX_TEXT]
+                    if not text:
+                        send({"event": "end", "id": msg_id})
+                        continue
+                    speaker.speak(msg_id, text, msg.get("lang"))
+                elif cmd == "stop":
+                    speaker.call(lambda c: c.cancel())
+                elif cmd == "pause":
+                    speaker.call(lambda c: c.pause())
+                elif cmd == "resume":
+                    speaker.call(lambda c: c.resume())
+                elif cmd == "rate":
+                    value = msg.get("value")
+                    if value is not None and (not isinstance(value, int)
+                                              or not -100 <= value <= 100):
+                        raise ValueError("rate must be -100..100 or null")
+                    speaker.set_rate(value)
+                elif cmd == "hello":
+                    send({"event": "hello", "version": VERSION, "rate": speaker.rate})
+                else:
+                    raise ValueError("unknown command %r" % (cmd,))
+            except Exception as e:
+                send({"event": "error", "id": msg_id if isinstance(msg_id, int) else None,
+                      "message": str(e) or type(e).__name__})
+    finally:
+        # the browser closed the port: stop what this tab started
+        try:
+            if speaker.client is not None:
+                speaker.client.cancel()
+        except Exception:
+            pass
+        speaker.drop()
+
+
+if __name__ == "__main__":
+    main()

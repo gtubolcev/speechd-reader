@@ -1,0 +1,37 @@
+/* Copyright (C) 2026 Grigory Tuboltsev; SPDX-License-Identifier: MIT */
+::highlight(speechd-reader-block) {
+  background-color: rgba(255, 230, 120, 0.18);
+}
+::highlight(speechd-reader-sentence) {
+  background-color: #ffe066;
+  color: #000;
+}
+.speechd-reader-pick {
+  position: fixed !important;
+  z-index: 2147483646 !important;
+  pointer-events: none !important;
+  box-sizing: border-box !important;
+  outline: 2px solid #0a84ff !important;
+  background: rgba(10, 132, 255, 0.12) !important;
+  transition: all 60ms linear;
+}
+.speechd-reader-pick-label, .speechd-reader-notice {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  font: 12px/1.6 system-ui, sans-serif !important;
+  color: #fff !important;
+  background: #1c1b22 !important;
+  padding: 1px 6px !important;
+  border-radius: 3px !important;
+  white-space: nowrap;
+}
+.speechd-reader-notice {
+  left: 50% !important;
+  bottom: 16px !important;
+  transform: translateX(-50%);
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  white-space: normal;
+  max-width: 90vw;
+}

@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Speech Dispatcher Reader",
+  "version": "0.1",
+  "description": "Reads web pages aloud through the system's Speech Dispatcher: the voice for each language comes from your speech settings.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "speechd-reader@tuboltsev.github.io",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {"required": ["none"]}
+    }
+  },
+  "permissions": ["nativeMessaging", "activeTab", "scripting", "menus", "storage"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_title": "Read aloud",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/speaker.svg"
+  },
+  "icons": {
+    "48": "icons/speaker.svg",
+    "96": "icons/speaker.svg"
+  },
+  "commands": {
+    "read-article": {
+      "suggested_key": { "default": "Alt+Shift+R" },
+      "description": "Read the article (or the selection)"
+    },
+    "pick-element": {
+      "suggested_key": { "default": "Alt+Shift+C" },
+      "description": "Choose the part of the page to read"
+    },
+    "pause": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Pause or resume"
+    },
+    "stop": {
+      "suggested_key": { "default": "Alt+Shift+X" },
+      "description": "Stop reading"
+    }
+  }
+}

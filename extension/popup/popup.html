@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="row">
+  <button id="auto" class="main" title="The selection, or else the main text found as in Reader View">Read</button>
+  <button id="pause" title="Pause / resume" disabled>⏸</button>
+  <button id="stop" title="Stop" disabled>⏹</button>
+</div>
+<button id="pick" class="wide" title="Choose a part of the page with the mouse or the keyboard">Choose what to read…</button>
+<button id="page" class="wide" title="All the visible text, without menus and side bars">Read the whole page</button>
+<label class="field">Language
+  <select id="lang">
+    <option value="">Automatic</option>
+  </select>
+</label>
+<label class="field">Speed
+  <input id="rate" type="range" min="-100" max="100" step="5">
+  <span id="rate-value"></span>
+</label>
+<label class="check"><input id="rate-default" type="checkbox"> Speed from the speech settings</label>
+<p id="status" role="status"></p>
+<script src="popup.js"></script>
+</body>
+</html>
