@@ -419,16 +419,16 @@ function selectionUnits() {
 /* from @el on: the rest of the article if @el is in it, else of the page */
 function unitsFrom(el) {
   const list = articleUnits() || pageUnits();
-  let i = list.findIndex((u) => u.block === el || el.contains(u.block) || u.block.contains(el));
-  if (i < 0)
-    i = list.findIndex((u) => el.compareDocumentPosition(u.block) & Node.DOCUMENT_POSITION_FOLLOWING);
-  if (i < 0) {
-    const own = pageUnits(document.body, true);
-    i = own.findIndex((u) => u.block === el || el.contains(u.block) || u.block.contains(el) ||
-                             el.compareDocumentPosition(u.block) & Node.DOCUMENT_POSITION_FOLLOWING);
-    return i < 0 ? null : own.slice(i);
-  }
-  return list.slice(i);
+  const i = list.findIndex((u) => u.block === el || el.contains(u.block) || u.block.contains(el));
+  if (i >= 0)
+    return list.slice(i);
+  // A block outside the main text (a menu, a side column: opennet.ru's
+  // "Пользователю, начинающим"): read it first, then what follows it on
+  // the page, not the next paragraph of the article somewhere else.
+  const own = pageUnits(document.body, true);
+  const j = own.findIndex((u) => u.block === el || el.contains(u.block) || u.block.contains(el) ||
+                                 el.compareDocumentPosition(u.block) & Node.DOCUMENT_POSITION_FOLLOWING);
+  return j < 0 ? null : own.slice(j);
 }
 
 /* ---------- the reader ---------- */
