@@ -1143,6 +1143,8 @@ browser.runtime.onMessage.addListener((msg) => {
 /* the panel is on by default; both settings and the panel's place follow
  * changes made in any tab */
 function applySettings(s = {}) {
+  if (retired)
+    return;
   if (s.buttons !== false) hoverStart(); else hoverStop();
   if (s.panel !== false) panelShow(); else panelHide();
 }
@@ -1158,6 +1160,31 @@ browser.storage.onChanged.addListener((changes) => {
   if (p && panel.host && Number.isFinite(p.x) && Number.isFinite(p.y))
     panelClamp(p.x, p.y);
 });
+
+/*
+ * After the extension is reloaded or updated, Firefox puts a new copy of
+ * this script into open pages, but the old copy's panel and ▶ button stay
+ * in the page: two panels one over the other. The new copy tells the old
+ * one to take its UI away. The event name is the same for every version.
+ */
+const REPLACE = "speechd-reader-replace";
+let retired = false;
+document.dispatchEvent(new CustomEvent(REPLACE));
+document.addEventListener(REPLACE, function retire() {
+  document.removeEventListener(REPLACE, retire);
+  retired = true;
+  try {
+    stop(false);
+    pickerEnd();
+    hoverStop();
+    panelHide();
+  } catch (e) {
+    // the old copy's extension APIs are gone
+  }
+});
+// also what an old copy without this left (and what failed above)
+for (const el of document.querySelectorAll(".speechd-reader-ui"))
+  el.remove();
 
 window.__speechdReader = {act, collectUnits, articleUnits, pageUnits, sentencesOf, unitText};
 })();
