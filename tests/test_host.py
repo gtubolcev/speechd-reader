@@ -8,7 +8,11 @@ HOST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "host", "s
 log = []
 
 class FakeClient:
-    def __init__(self, *a, **k): log.append(("connect",))
+    # the host's short "probe" connections (which module has a voice for a
+    # language) are not the reading connection the tests count
+    def __init__(self, *a, **k):
+        self.probe = a[1:2] == ("probe",)
+        if not self.probe: log.append(("connect",))
     def set_language(self, l): log.append(("lang", l))
     def set_rate(self, r): log.append(("rate", r))
     def speak(self, text, callback=None, event_types=None):
@@ -16,7 +20,8 @@ class FakeClient:
     def cancel(self): log.append(("cancel",))
     def pause(self): log.append(("pause",))
     def resume(self): log.append(("resume",))
-    def close(self): log.append(("close",))
+    def close(self):
+        if not self.probe: log.append(("close",))
 
 fake = types.ModuleType("speechd")
 fake.SSIPClient = FakeClient

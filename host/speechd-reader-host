@@ -28,6 +28,7 @@ Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
 import json
 import os
 import re
+import signal
 import struct
 import sys
 import threading
@@ -378,7 +379,17 @@ class Speaker:
             self.call(lambda c: c.set_rate(value))
 
 
+def leave(signum, frame):
+    raise SystemExit(0)
+
+
 def main():
+    # Firefox ends the host with SIGTERM when the extension is reloaded or
+    # updated, or the browser quits: leave through the finally below, so the
+    # sentences already queued in speechd are cancelled and not read on
+    # with no one to stop them.
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        signal.signal(sig, leave)
     speaker = Speaker()
     try:
         while True:
