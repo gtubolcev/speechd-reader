@@ -40,9 +40,17 @@ SETTLE = 3.0    # seconds the file must be old: the reload comes after the write
 
 
 def config_files():
+    """speechd.conf and the module configurations (a module's voice)."""
     home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return (os.path.join(home, "speech-dispatcher", "speechd.conf"),
-            "/etc/speech-dispatcher/speechd.conf")
+    files = []
+    for base in (os.path.join(home, "speech-dispatcher"), "/etc/speech-dispatcher"):
+        files.append(os.path.join(base, "speechd.conf"))
+        try:
+            names = sorted(os.listdir(os.path.join(base, "modules")))[:200]
+        except OSError:
+            names = []
+        files += [os.path.join(base, "modules", n) for n in names if n.endswith(".conf")]
+    return tuple(files)
 
 
 def path_age(path):
