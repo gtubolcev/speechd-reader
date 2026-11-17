@@ -122,7 +122,11 @@ function unitText(unit) {
   const map = [];
   for (const p of unit.parts) {
     map.push({offset: text.length, part: p});
-    text += p.text;
+    // a line break in the source is a space on the screen, but a sentence
+    // end for Intl.Segmenter; same length, so the offsets stay right
+    const keep = p.node && /^(pre|pre-wrap|pre-line|break-spaces)$/.test(
+      getComputedStyle(p.node.parentElement).whiteSpace);
+    text += p.node && !keep ? p.text.replace(/[\r\n]/g, " ") : p.text;
   }
   return {text, map};
 }

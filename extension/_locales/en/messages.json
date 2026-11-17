@@ -90,5 +90,14 @@
   },
   "popButtons": {
     "message": "▶ button next to paragraphs"
+  },
+  "popPin": {
+    "message": "Keep this window open"
+  },
+  "popAllow": {
+    "message": "Allow on all sites"
+  },
+  "popAllowTitle": {
+    "message": "So that this window can read any page, not only those where the extension was started"
   }
 }

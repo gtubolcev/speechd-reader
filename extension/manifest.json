@@ -61,5 +61,8 @@
       "description": "__MSG_cmdStop__"
     }
   },
-  "default_locale": "en"
+  "default_locale": "en",
+  "optional_host_permissions": [
+    "<all_urls>"
+  ]
 }

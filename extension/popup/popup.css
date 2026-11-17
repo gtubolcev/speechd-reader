@@ -9,4 +9,7 @@ button { font: inherit; padding: 5px 8px; }
 .check { display: block; margin: 2px 0; }
 #rate-value { width: 2.5em; text-align: end; }
 #status { min-height: 1.2em; margin: 8px 0 0; color: GrayText; }
+body.detached { width: auto; }
+body.detached #pin { display: none; }
 #status.error { color: #d70022; }
+[hidden] { display: none !important; }

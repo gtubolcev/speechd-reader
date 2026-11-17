@@ -131,6 +131,12 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return;
   case "status":
     return Promise.resolve({speakingTab, lastError});
+  case "detach":      // the popup's 📌: the same page as a window that stays
+    browser.windows.create({
+      url: browser.runtime.getURL("popup/popup.html?detached=1"),
+      type: "popup", width: 300, height: 380,
+    });
+    return;
   case "run":         // from the popup
     return runInTab(msg.tab, msg.action, {lang: msg.lang, on: msg.on});
   }
@@ -156,6 +162,14 @@ async function inject(tab) {
 }
 
 async function runInTab(tab, action, extra = {}) {
+  // the popup asks for the state often: never inject only for that
+  if (action === "state") {
+    try {
+      return await browser.tabs.sendMessage(tab, {type: "action", action}, {frameId: 0});
+    } catch (e) {
+      return {active: false};
+    }
+  }
   try {
     await inject(tab);
   } catch (e) {
