@@ -10,7 +10,13 @@ if [ "${1:-}" = --system ]; then
     install -D -m 755 "$here/speechd-reader-host" "$bin"
 else
     bin="$here/speechd-reader-host"
-    dir="${HOME}/.mozilla/native-messaging-hosts"
+    # Firefox 147+ keeps its files in XDG_CONFIG_HOME when ~/.mozilla is absent
+    xdg="${XDG_CONFIG_HOME:-$HOME/.config}/mozilla"
+    if [ -d "$HOME/.mozilla" ] || [ ! -d "$xdg" ]; then
+        dir="$HOME/.mozilla/native-messaging-hosts"
+    else
+        dir="$xdg/native-messaging-hosts"
+    fi
 fi
 mkdir -p "$dir"
 cat > "$dir/speechd_reader.json" <<JSON
