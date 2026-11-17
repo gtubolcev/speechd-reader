@@ -963,6 +963,7 @@ async function act(msg) {
   case "panel":
     await panelShow();
     return {ok: true};
+  case "attach":       // injected by now; nothing more to do
   case "state":
     return {active: reader.active, paused: reader.paused, picking: picker.on, buttons: hover.on,
             panel: !!panel.host,

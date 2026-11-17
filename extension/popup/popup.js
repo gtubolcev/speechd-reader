@@ -100,5 +100,8 @@ $("pin").onclick = async () => { const r = await run("panel"); if (r && r.ok) do
 (async () => {
   await fillLanguages();
   await loadSettings();
+  // opening the popup is the user's gesture that lets the extension into
+  // the page (activeTab): go in once, so the ▶ buttons show up there
+  await run("attach");
   refresh();
 })();
