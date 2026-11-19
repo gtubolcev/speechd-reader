@@ -224,6 +224,10 @@ function cutLong(text, start, end, out) {
 }
 
 /* sentences of a unit: [{text, range, lang}] */
+/* after "12." a sentence goes on when a month or a lower-case word follows */
+const ORDINAL_NEXT = new RegExp("^\\s*(\\p{Ll}|(Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)" +
+                                "|(Januar|Februar|März|April|Juni|Juli|August|September|Oktober|November|Dezember)\\b)", "u");
+
 function sentencesOf(unit, lang) {
   const {text, map} = unitText(unit);
   const spans = [];
@@ -237,8 +241,10 @@ function sentencesOf(unit, lang) {
     // citation marks like "[12]" are not sentences of their own
     // nor are breaks after initials and short abbreviations ("A. Writer", "Dr. No", "т. е.")
     const prev = spans.length ? text.slice(spans[spans.length - 1][0], s.index) : "";
+    // nor a day or ordinal number before a month or a lower-case word ("Am 12. Januar")
     if (spans.length && (/^\s*\[\d+\]\s*$/.test(s.segment) ||
-        /(^|[\s(])(\p{Lu}|\p{L}{1,3}\.\p{L}{1,2}|Mr|Mrs|Ms|Dr|Prof|St|vs|etc|e\.g|i\.e|т|г|гг|ул|им|см|др|пр|н|э)\.\s*$/u.test(prev))) {
+        /(^|[\s(])(\p{Lu}|\p{L}{1,3}\.\p{L}{1,2}|Mr|Mrs|Ms|Dr|Prof|St|vs|etc|e\.g|i\.e|Mio|Mrd|Tsd|Nr|ca|bzw|usw|vgl|Jh|Jhd|Abs|Bd|т|г|гг|ул|им|см|др|пр|н|э|млн|млрд|тыс|руб)\.\s*$/u.test(prev) ||
+        (/(^|\s)\d{1,2}\.\s*$/.test(prev) && ORDINAL_NEXT.test(s.segment)))) {
       spans[spans.length - 1][1] = s.index + s.segment.length;
       continue;
     }
