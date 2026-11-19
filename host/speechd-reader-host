@@ -175,7 +175,24 @@ def config_stamp():
     return tuple(stamp)
 
 
+def debug_enabled():
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return os.path.exists(os.path.join(base, "speechd-reader", "debug"))
+
+
+DEBUG = debug_enabled()
+
+
+def debug(line):
+    """Protocol trace for bug hunting, on while ~/.cache/speechd-reader/debug
+    exists (read at start). Never the text: ids, events, lengths only."""
+    if DEBUG:
+        log("[%d] %s" % (threading.get_ident() % 10000, line))
+
+
 def send(obj):
+    debug("-> %s id=%s%s" % (obj.get("event"), obj.get("id"),
+                             " msg=%r" % obj["message"] if obj.get("message") else ""))
     data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
     with out_lock:
         sys.stdout.buffer.write(struct.pack("=I", len(data)) + data)
@@ -193,7 +210,13 @@ def receive():
     data = sys.stdin.buffer.read(length)
     if len(data) < length:
         return None
-    return json.loads(data.decode("utf-8"))
+    msg = json.loads(data.decode("utf-8"))
+    if DEBUG and isinstance(msg, dict):
+        text = msg.get("text")
+        debug("<- %s id=%s lang=%s len=%s value=%s" % (
+            msg.get("cmd"), msg.get("id"), msg.get("lang"),
+            len(text) if isinstance(text, str) else None, msg.get("value")))
+    return msg
 
 
 def speechd_language(tag):
@@ -237,6 +260,7 @@ class Speaker:
                 if self.client is None or connection_alive(self.client):
                     continue
                 lost = sorted(self.outstanding)
+                debug("connection died; lost=%s" % lost)
                 self.drop()
             for msg_id in lost:
                 send({"event": "lost", "id": msg_id})
@@ -245,6 +269,7 @@ class Speaker:
         if self.client is not None and not self.outstanding:
             stamp = config_stamp()
             if stamp != self.stamp:
+                debug("config changed, reconnect")
                 self.drop()
         if self.client is None:
             stamp = config_stamp()
@@ -254,6 +279,7 @@ class Speaker:
             self.stamp = None if fresh else stamp
             self.client = self.speechd.SSIPClient("speechd-reader", "browser",
                                                   autospawn=True)
+            debug("connected (fresh=%s)" % fresh)
             if self.rate is not None:
                 self.client.set_rate(self.rate)
         return self.client
@@ -273,8 +299,9 @@ class Speaker:
         with self.lock:
             try:
                 return fn(self.connect())
-            except (self.speechd.SSIPCommunicationError, OSError, BrokenPipeError):
+            except (self.speechd.SSIPCommunicationError, OSError, BrokenPipeError) as e:
                 lost = sorted(self.outstanding)
+                debug("call failed (%s: %s), reconnect; lost=%s" % (type(e).__name__, e, lost))
                 self.drop()
                 for msg_id in lost:
                     send({"event": "lost", "id": msg_id})
@@ -342,6 +369,7 @@ class Speaker:
         ct = self.speechd.CallbackType
 
         def callback(kind, index_mark=None):
+            debug("speechd %s id=%s" % (kind, msg_id))
             if kind in (ct.END, ct.CANCEL):
                 self.outstanding.discard(msg_id)
             if kind in (ct.BEGIN, ct.END, ct.CANCEL):
@@ -358,6 +386,8 @@ class Speaker:
                         and chosen and chosen != self.module_set:
                     client.set_output_module(chosen)
                     self.module_set = chosen
+                debug("speak id=%s lang=%s module=%s configured=%s outstanding=%s" % (
+                    msg_id, language, chosen, configured, sorted(self.outstanding)))
             # before speak(): the end may come before speak() returns
             self.outstanding.add(msg_id)
             try:
