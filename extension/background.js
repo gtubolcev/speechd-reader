@@ -145,8 +145,12 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return;
   case "pause":
   case "resume":
-    if (port && (tab === null || tab === speakingTab)) {
-      port.postMessage({cmd: msg.type});
+    // the tab cancels on pause and speaks the sentences again on resume
+    if (tab === null || tab === speakingTab) {
+      if (msg.type === "pause" && port) {
+        port.postMessage({cmd: "stop"});
+        pending.clear();      // their cancel events mean nothing to the tab
+      }
       paused = msg.type === "pause";
       broadcast();
     }

@@ -518,7 +518,7 @@ async function start(units) {
 
 /* keep IN_FLIGHT sentences in speechd */
 async function fill(gen) {
-  while (gen === reader.generation && reader.sent.length < IN_FLIGHT) {
+  while (gen === reader.generation && !reader.paused && reader.sent.length < IN_FLIGHT) {
     if (!reader.queue.length) {
       if (reader.unit >= reader.units.length)
         break;
@@ -535,7 +535,7 @@ async function fill(gen) {
     reader.sent.push({id, s});
     browser.runtime.sendMessage({type: "speak", id, text: s.text, lang: s.lang}).catch(() => {});
   }
-  if (gen === reader.generation && !reader.sent.length && !reader.queue.length &&
+  if (gen === reader.generation && !reader.paused && !reader.sent.length && !reader.queue.length &&
       reader.unit >= reader.units.length) {
     stop(false);
     browser.runtime.sendMessage({type: "done"}).catch(() => {});
@@ -1123,8 +1123,19 @@ async function act(msg) {
     if (!reader.active)
       return {ok: false};
     reader.paused = !reader.paused;
+    if (reader.paused) {
+      // not speechd's PAUSE: the modules answer it like STOP, and speechd
+      // keeps the message and later speaks it again, mangled, from the
+      // start. Cancel instead and speak the sentences again on resume.
+      clearTimeout(reader.requeue);
+      reader.requeue = 0;
+      reader.queue.unshift(...reader.sent.map((x) => x.s));
+      reader.sent = [];
+    }
     browser.runtime.sendMessage({type: reader.paused ? "pause" : "resume"}).catch(() => {});
     panelUpdate();
+    if (!reader.paused)
+      fill(reader.generation);
     return {ok: true, paused: reader.paused};
   case "set-lang":
     langOverride = msg.lang || null;
