@@ -1,7 +1,10 @@
 # Copyright (C) 2026 Grigory Tuboltsev
 # SPDX-License-Identifier: MIT
 """Protocol tests of the native host against a fake speechd (no sound)."""
-import importlib.machinery, importlib.util, io, json, os, struct, sys, types
+import importlib.machinery, importlib.util, io, json, os, struct, sys, tempfile, types
+
+# the host's log goes to a scratch cache, not the user's host.log
+os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="speechd-reader-test-")
 
 HOST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "host", "speechd-reader-host")
 
