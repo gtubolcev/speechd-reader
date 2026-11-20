@@ -27,7 +27,12 @@ const NOT_ARTICLE = "nav, aside, footer, header, menu, dialog, form, " +
                     "[role='navigation'], [role='banner'], [role='contentinfo'], " +
                     "[role='complementary'], [role='search'], [role='dialog']";
 const MAX_SENTENCE = 400;     // longer runs are cut at a space
-const IN_FLIGHT = 2;          // sentences queued in speechd ahead
+const IN_FLIGHT = 2;          // utterances queued in speechd ahead
+// an utterance: up to this many sentences of one paragraph, with an index
+// mark before each, so the module synthesizes the next sentence while the
+// last one plays and the normalizer sees them together
+const GROUP_SENTENCES = 8;
+const GROUP_CHARS = 1500;
 
 /* ---------- the text model ---------- */
 
@@ -522,7 +527,22 @@ async function start(units) {
   return {ok: true, units: units.length};
 }
 
-/* keep IN_FLIGHT sentences in speechd */
+/* the next sentences of the queue that go in one utterance: one paragraph,
+ * one language */
+function takeGroup() {
+  const ss = [reader.queue.shift()];
+  let chars = ss[0].text.length;
+  while (reader.queue.length && ss.length < GROUP_SENTENCES) {
+    const s = reader.queue[0];
+    if (s.unit !== ss[0].unit || s.lang !== ss[0].lang || chars + s.text.length > GROUP_CHARS)
+      break;
+    chars += s.text.length;
+    ss.push(reader.queue.shift());
+  }
+  return ss;
+}
+
+/* keep IN_FLIGHT utterances in speechd */
 async function fill(gen) {
   while (gen === reader.generation && !reader.paused && reader.sent.length < IN_FLIGHT) {
     if (!reader.queue.length) {
@@ -536,10 +556,12 @@ async function fill(gen) {
       reader.queue.push(...sentencesOf(unit, lang).map((s) => Object.assign(s, {unit})));
       continue;
     }
-    const s = reader.queue.shift();
+    const ss = takeGroup();
     const id = reader.nextId++;
-    reader.sent.push({id, s});
-    browser.runtime.sendMessage({type: "speak", id, text: s.text, lang: s.lang}).catch(() => {});
+    // at: the sentence that sounds (the last mark heard)
+    reader.sent.push({id, ss, at: 0});
+    browser.runtime.sendMessage({type: "speak", id, parts: ss.map((s) => s.text),
+                                 lang: ss[0].lang}).catch(() => {});
   }
   if (gen === reader.generation && !reader.paused && !reader.sent.length && !reader.queue.length &&
       reader.unit >= reader.units.length) {
@@ -564,9 +586,16 @@ function onEvent(msg) {
   const i = reader.sent.findIndex((x) => x.id === msg.id);
   if (i < 0)
     return;
-  const {s} = reader.sent[i];
+  const x = reader.sent[i];
   if (msg.event === "begin") {
-    show(s);
+    show(x.ss[x.at]);
+    return;
+  }
+  if (msg.event === "mark") {
+    if (Number.isInteger(msg.part) && msg.part >= 0 && msg.part < x.ss.length) {
+      x.at = msg.part;
+      show(x.ss[x.at]);
+    }
     return;
   }
   if (msg.event === "error") {
@@ -578,7 +607,7 @@ function onEvent(msg) {
   if (msg.event === "lost") {
     // the server went away (a crash on a settings reload): speak these
     // again, in their order, once all the lost ones have come in
-    reader.sent[i].lost = true;
+    x.lost = true;
     if (!reader.requeue)
       reader.requeue = setTimeout(requeueLost, 50, reader.generation);
     return;
@@ -596,7 +625,8 @@ function requeueLost(gen) {
   reader.requeue = 0;
   if (gen !== reader.generation)
     return;
-  const lost = reader.sent.filter((x) => x.lost).map((x) => x.s);
+  // from the sentence that was sounding
+  const lost = reader.sent.filter((x) => x.lost).flatMap((x) => x.ss.slice(x.at));
   reader.sent = reader.sent.filter((x) => !x.lost);
   if (lost.some((s) => (s.tries = (s.tries || 0) + 1) > MAX_RETRIES)) {
     stop();
@@ -1130,12 +1160,13 @@ async function act(msg) {
       return {ok: false};
     reader.paused = !reader.paused;
     if (reader.paused) {
-      // not speechd's PAUSE: the modules answer it like STOP, and speechd
+      // not speechd's PAUSE: many modules answer it like STOP, and speechd
       // keeps the message and later speaks it again, mangled, from the
-      // start. Cancel instead and speak the sentences again on resume.
+      // start. Cancel instead and speak again from the sentence that was
+      // sounding on resume.
       clearTimeout(reader.requeue);
       reader.requeue = 0;
-      reader.queue.unshift(...reader.sent.map((x) => x.s));
+      reader.queue.unshift(...reader.sent.flatMap((x) => x.ss.slice(x.at)));
       reader.sent = [];
     }
     browser.runtime.sendMessage({type: reader.paused ? "pause" : "resume"}).catch(() => {});

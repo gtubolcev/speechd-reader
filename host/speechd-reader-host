@@ -15,10 +15,15 @@ espeak last. What it picked goes to ~/.cache/speechd-reader/host.log
 
 Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
   in:  {"cmd": "speak", "id": N, "text": "...", "lang": "uk"}
+       {"cmd": "speak", "id": N, "parts": ["...", "..."], "lang": "uk"}
+           (one utterance with an index mark before each part: the
+            sentences of a paragraph, so the module synthesizes the next
+            while the last one plays)
        {"cmd": "stop"} | {"cmd": "pause"} | {"cmd": "resume"}
        {"cmd": "rate", "value": -100..100 or null}   (null: the user's default)
        {"cmd": "hello"}
   out: {"event": "begin"|"end"|"cancel", "id": N}
+       {"event": "mark", "id": N, "part": K}   (part K begins to sound)
        {"event": "lost", "id": N}   (the server went away before N ended:
                                      speak it again, a new server answers)
        {"event": "hello", "version": "...", "rate": R}
@@ -26,6 +31,7 @@ Protocol (native messaging: 32-bit native-endian length + UTF-8 JSON):
 """
 
 import json
+from xml.sax.saxutils import escape
 import os
 import re
 import signal
@@ -37,6 +43,7 @@ import time
 VERSION = "0.1"
 MAX_MESSAGE = 1024 * 1024      # Firefox sends at most 4 GB; we take 1 MB
 MAX_TEXT = 100_000             # characters in one utterance
+MAX_PARTS = 200
 LANG_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8})*$")
 
 out_lock = threading.Lock()
@@ -230,6 +237,12 @@ def speechd_language(tag):
     return parts[0]
 
 
+def ssml(parts):
+    """the parts as SSML with the index mark "K" before part K"""
+    return "<speak>" + " ".join('<mark name="%d"/>%s' % (i, escape(t))
+                                for i, t in enumerate(parts)) + "</speak>"
+
+
 class Speaker:
     def __init__(self):
         import speechd
@@ -280,6 +293,8 @@ class Speaker:
             self.client = self.speechd.SSIPClient("speechd-reader", "browser",
                                                   autospawn=True)
             debug("connected (fresh=%s)" % fresh)
+            # everything goes as SSML: the index marks of paragraphs
+            self.client.set_data_mode(self.speechd.DataMode.SSML)
             if self.rate is not None:
                 self.client.set_rate(self.rate)
         return self.client
@@ -365,15 +380,20 @@ class Speaker:
         finally:
             probe.close()
 
-    def speak(self, msg_id, text, lang):
+    def speak(self, msg_id, parts, lang):
         ct = self.speechd.CallbackType
+        text = ssml(parts)
 
         def callback(kind, index_mark=None):
-            debug("speechd %s id=%s" % (kind, msg_id))
+            debug("speechd %s id=%s %s" % (kind, msg_id, index_mark or ""))
             if kind in (ct.END, ct.CANCEL):
                 self.outstanding.discard(msg_id)
             if kind in (ct.BEGIN, ct.END, ct.CANCEL):
                 send({"event": kind, "id": msg_id})
+            elif kind == ct.INDEX_MARK and index_mark is not None \
+                    and index_mark.isdigit() and int(index_mark) < len(parts):
+                # not the server's own marks
+                send({"event": "mark", "id": msg_id, "part": int(index_mark)})
 
         def do(client):
             language = speechd_language(lang)
@@ -392,7 +412,7 @@ class Speaker:
             self.outstanding.add(msg_id)
             try:
                 client.speak(text, callback=callback,
-                             event_types=(ct.BEGIN, ct.END, ct.CANCEL))
+                             event_types=(ct.BEGIN, ct.END, ct.CANCEL, ct.INDEX_MARK))
             except Exception:
                 self.outstanding.discard(msg_id)
                 raise
@@ -436,14 +456,18 @@ def main():
             msg_id = msg.get("id")
             try:
                 if cmd == "speak":
-                    text = msg.get("text")
-                    if not isinstance(msg_id, int) or not isinstance(text, str):
-                        raise ValueError("speak needs an integer id and a text")
-                    text = text.strip()[:MAX_TEXT]
-                    if not text:
+                    parts = msg.get("parts", [msg.get("text")])
+                    if not isinstance(msg_id, int) or not isinstance(parts, list) \
+                            or not 0 < len(parts) <= MAX_PARTS \
+                            or not all(isinstance(t, str) for t in parts):
+                        raise ValueError("speak needs an integer id and a text or parts")
+                    parts = [t.strip() for t in parts]
+                    if sum(map(len, parts)) > MAX_TEXT:
+                        raise ValueError("text too long")
+                    if not any(parts):
                         send({"event": "end", "id": msg_id})
                         continue
-                    speaker.speak(msg_id, text, msg.get("lang"))
+                    speaker.speak(msg_id, parts, msg.get("lang"))
                 elif cmd == "stop":
                     speaker.call(lambda c: c.cancel())
                 elif cmd == "pause":

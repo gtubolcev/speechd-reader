@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Grigory Tuboltsev
 # SPDX-License-Identifier: MIT
 """Protocol tests of the native host against a fake speechd (no sound)."""
-import importlib.machinery, importlib.util, io, json, os, struct, sys, tempfile, types
+import importlib.machinery, importlib.util, io, json, os, re, struct, sys, tempfile, types
 
 # the host's log goes to a scratch cache, not the user's host.log
 os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="speechd-reader-test-")
@@ -18,8 +18,14 @@ class FakeClient:
         if not self.probe: log.append(("connect",))
     def set_language(self, l): log.append(("lang", l))
     def set_rate(self, r): log.append(("rate", r))
+    def set_data_mode(self, m): log.append(("mode", m))
     def speak(self, text, callback=None, event_types=None):
-        log.append(("speak", text)); callback("begin"); callback("end")
+        log.append(("speak", text)); callback("begin")
+        # the module reports the marks as their parts sound; the server's
+        # own marks and nonsense are dropped by the host
+        for m in re.findall(r'<mark name="([^"]*)"/>', text) + ["__spd_x", "99"]:
+            callback("index_marks", index_mark=m)
+        callback("end")
     def cancel(self): log.append(("cancel",))
     def pause(self): log.append(("pause",))
     def resume(self): log.append(("resume",))
@@ -29,6 +35,7 @@ class FakeClient:
 fake = types.ModuleType("speechd")
 fake.SSIPClient = FakeClient
 fake.SSIPCommunicationError = type("E", (Exception,), {})
+fake.DataMode = types.SimpleNamespace(TEXT="text", SSML="ssml")
 fake.CallbackType = types.SimpleNamespace(BEGIN="begin", END="end", CANCEL="cancel", INDEX_MARK="index_marks")
 sys.modules["speechd"] = fake
 
@@ -53,8 +60,20 @@ def run(*msgs):
 
 def test_speak():
     r = run({"cmd": "speak", "id": 1, "text": " Привет ", "lang": "ru-RU"})
-    assert r == [{"event": "begin", "id": 1}, {"event": "end", "id": 1}], r
-    assert ("lang", "ru") in log and ("speak", "Привет") in log
+    assert r == [{"event": "begin", "id": 1}, {"event": "mark", "id": 1, "part": 0},
+                 {"event": "end", "id": 1}], r
+    assert ("lang", "ru") in log and ("mode", "ssml") in log
+    assert ("speak", '<speak><mark name="0"/>Привет</speak>') in log
+
+def test_parts():
+    r = run({"cmd": "speak", "id": 1, "parts": ["A < b.", " C & d. "], "lang": "en"},
+            {"cmd": "speak", "id": 2, "parts": []},
+            {"cmd": "speak", "id": 3, "parts": ["a", 5]},
+            {"cmd": "speak", "id": 4, "parts": ["x"] * 201})
+    assert ("speak", '<speak><mark name="0"/>A &lt; b. <mark name="1"/>C &amp; d.</speak>') in log
+    assert r[:4] == [{"event": "begin", "id": 1}, {"event": "mark", "id": 1, "part": 0},
+                     {"event": "mark", "id": 1, "part": 1}, {"event": "end", "id": 1}], r
+    assert [e["id"] for e in r[4:]] == [2, 3, 4] and all(e["event"] == "error" for e in r[4:]), r
 
 def test_lang():
     assert host.speechd_language("pt-BR") == "pt-br"

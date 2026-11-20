@@ -73,9 +73,9 @@ function onHostMessage(msg) {
   const p = pending.get(msg.id);
   if (!p)
     return;
-  if (msg.event !== "begin")
+  if (msg.event !== "begin" && msg.event !== "mark")
     pending.delete(msg.id);
-  toTab(p.tab, {type: "event", event: msg.event, id: p.id, message: msg.message});
+  toTab(p.tab, {type: "event", event: msg.event, id: p.id, part: msg.part, message: msg.message});
   touch();
 }
 
@@ -118,7 +118,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   const tab = sender.tab ? sender.tab.id : null;
   switch (msg && msg.type) {
   case "speak": {
-    if (tab === null || typeof msg.text !== "string")
+    if (tab === null || !Array.isArray(msg.parts))
       return;
     if (speakingTab !== null && speakingTab !== tab) {
       stopAll();
@@ -131,7 +131,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     const id = nextId++;
     pending.set(id, {tab, id: msg.id});
     try {
-      hostPort().postMessage({cmd: "speak", id, text: msg.text, lang: msg.lang || null});
+      hostPort().postMessage({cmd: "speak", id, parts: msg.parts, lang: msg.lang || null});
     } catch (e) {
       pending.delete(id);
       toTab(tab, {type: "event", event: "error", id: msg.id, message: String(e)});
