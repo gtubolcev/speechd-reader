@@ -56,8 +56,6 @@ class FakeClient:
             callback("index_marks", index_mark=m)
         callback("end")
     def cancel(self): log.append(("cancel",))
-    def pause(self): log.append(("pause",))
-    def resume(self): log.append(("resume",))
     def close(self):
         if not self.probe: log.append(("close",))
 
@@ -137,6 +135,30 @@ def test_truncated():
 def test_rate_and_stop():
     run({"cmd": "rate", "value": 30}, {"cmd": "stop"}, {"cmd": "rate", "value": None})
     assert ("rate", 30) in log and ("cancel",) in log and ("close",) in log
+
+def test_default_rate_gives_back_queued():
+    """rate null drops the connection: what is queued is cancelled and comes
+    back as lost, so the extension speaks it again"""
+    sp = host.Speaker()
+    out = io.BytesIO()
+    sys.stdout = types.SimpleNamespace(buffer=out)
+    try:
+        sp.call(lambda c: None)
+        sp.outstanding.update({7, 8})
+        log.clear()
+        sp.set_rate(None)
+    finally:
+        sys.stdout = sys.__stdout__
+    data, ev = out.getvalue(), []
+    while data:
+        (n,) = struct.unpack("=I", data[:4]); ev.append(json.loads(data[4:4+n])); data = data[4+n:]
+    assert log[:2] == [("cancel",), ("close",)], log
+    assert ev == [{"event": "lost", "id": 7}, {"event": "lost", "id": 8}], ev
+    assert not sp.outstanding
+
+def test_control_characters():
+    run({"cmd": "speak", "id": 1, "parts": ["a\x00b\x1bc\td"], "lang": "en"})
+    assert ("speak", '<speak><mark name="0"/>a b c\td</speak>') in log, log
 
 def quiet(fn):
     def run_quiet():

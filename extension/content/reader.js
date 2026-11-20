@@ -604,31 +604,41 @@ function onEvent(msg) {
     notice(msg.message || browser.i18n.getMessage("speechFailed"));
     return;
   }
-  if (msg.event === "lost") {
-    // the server went away (a crash on a settings reload): speak these
-    // again, in their order, once all the lost ones have come in
+  if (msg.event === "lost" || msg.event === "cancel") {
+    // lost: the server went away (a crash on a settings reload, the rate
+    // back to default).  cancel: speechd dropped it for another client (a
+    // screen reader spoke); our own stop clears reader.sent first, so a
+    // cancel that finds its entry is not ours.  A message is a whole
+    // paragraph: speak again from the sentence that was sounding, in
+    // their order, once all of them have come in
     x.lost = true;
+    x.cancelled = msg.event === "cancel";
     if (!reader.requeue)
       reader.requeue = setTimeout(requeueLost, 50, reader.generation);
     return;
-  }
-  if (msg.event === "cancel") {
-    // speechd dropped it (a screen reader spoke, another client): go on
   }
   reader.sent.splice(i, 1);
   fill(reader.generation);
 }
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 3;      // lost: the server keeps failing on them
+const MAX_CANCELS = 20;     // cancelled by others: give up some time
 
 function requeueLost(gen) {
   reader.requeue = 0;
   if (gen !== reader.generation)
     return;
   // from the sentence that was sounding
-  const lost = reader.sent.filter((x) => x.lost).flatMap((x) => x.ss.slice(x.at));
+  const gone = reader.sent.filter((x) => x.lost);
+  const lost = gone.flatMap((x) => x.ss.slice(x.at));
   reader.sent = reader.sent.filter((x) => !x.lost);
-  if (lost.some((s) => (s.tries = (s.tries || 0) + 1) > MAX_RETRIES)) {
+  let failed = false;
+  for (const x of gone)
+    for (const s of x.ss.slice(x.at))
+      if (x.cancelled ? (s.cancels = (s.cancels || 0) + 1) > MAX_CANCELS
+                      : (s.tries = (s.tries || 0) + 1) > MAX_RETRIES)
+        failed = true;
+  if (failed) {
     stop();
     notice(browser.i18n.getMessage("speechFailed"));
     return;
@@ -1210,6 +1220,14 @@ browser.runtime.onMessage.addListener((msg) => {
     Object.assign(busy, {speaking: msg.speaking, own: msg.own, paused: msg.paused});
     panelUpdate();
   }
+});
+
+// the page goes away (a link, a reload): the paragraphs already in speechd
+// would be read on with no panel to stop them, and the other tabs would
+// show "reading" for good
+window.addEventListener("pagehide", () => {
+  if (reader.active || reader.sent.length)
+    stop();
 });
 
 /* the panel is on by default; both settings and the panel's place follow
