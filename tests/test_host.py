@@ -9,14 +9,43 @@ os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="speechd-reader-test-")
 HOST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "host", "speechd-reader-host")
 
 log = []
+# what the fake server is configured with
+server = {}
+
+def reset_server():
+    server.clear()
+    server.update(default="a", per_lang={}, rate="0",
+                  voices={"a": ["en", "ru"], "b": ["pt-pt", "de"], "c": ["pt-br"],
+                          "espeak-ng": ["de", "en", "pt"]})
+reset_server()
 
 class FakeClient:
-    # the host's short "probe" connections (which module has a voice for a
-    # language) are not the reading connection the tests count
+    # the host's short "probe" connections (the server's settings, which
+    # module has a voice for a language) are not the reading connection the
+    # tests count
     def __init__(self, *a, **k):
         self.probe = a[1:2] == ("probe",)
+        self.lang = self.module = None
+        self._conn = types.SimpleNamespace(send_command=self.command)
         if not self.probe: log.append(("connect",))
-    def set_language(self, l): log.append(("lang", l))
+    def command(self, *args):
+        assert args[0] == "GET", args
+        value = {"OUTPUT_MODULE": self.output_module(), "RATE": server["rate"],
+                 "LANGUAGE": "en"}.get(args[1], "0")
+        return 251, "OK", [value]
+    def output_module(self):
+        return self.module or server["default"]
+    def set_language(self, l):
+        if not self.probe: log.append(("lang", l))
+        self.lang = l
+        # as speechd does: the module changes only for a LanguageDefaultModule
+        if l in server["per_lang"]: self.module = server["per_lang"][l]
+    def set_output_module(self, m):
+        if not self.probe: log.append(("module", m))
+        self.module = m
+    def list_output_modules(self): return list(server["voices"])
+    def list_synthesis_voices(self):
+        return [("v", l, "none") for l in server["voices"].get(self.output_module(), [])]
     def set_rate(self, r): log.append(("rate", r))
     def set_data_mode(self, m): log.append(("mode", m))
     def speak(self, text, callback=None, event_types=None):
@@ -109,37 +138,81 @@ def test_rate_and_stop():
     run({"cmd": "rate", "value": 30}, {"cmd": "stop"}, {"cmd": "rate", "value": None})
     assert ("rate", 30) in log and ("cancel",) in log and ("close",) in log
 
+def quiet(fn):
+    def run_quiet():
+        sys.stdout = types.SimpleNamespace(buffer=io.BytesIO())
+        try: fn()
+        finally: sys.stdout = sys.__stdout__
+    run_quiet.__name__ = fn.__name__
+    return run_quiet
+
+@quiet
 def test_config_change_reconnects():
-    import tempfile, time
-    d = tempfile.mkdtemp()
-    conf = os.path.join(d, "speechd.conf")
-    with open(conf, "w") as f: f.write("DefaultModule a\n")
-    old = time.time() - 60
-    os.utime(conf, (old, old))
-    host.config_files = lambda: (conf,)
+    host.CHECK_INTERVAL = 0
+    reset_server()
     sp = host.Speaker()
     log.clear()
-    sp.speak(1, "a", "en"); sp.speak(2, "b", "en")
+    sp.speak(1, ["a"], "en"); sp.speak(2, ["b"], "en")
     assert log.count(("connect",)) == 1, log
     # still speaking: the change waits for the next start
     sp.outstanding.add(99)
-    with open(conf, "w") as f: f.write("DefaultModule b\n")
-    os.utime(conf, (old + 1, old + 1))
-    sp.speak(3, "c", "en")
+    server["rate"] = "30"
+    sp.speak(3, ["c"], "en")
     assert log.count(("connect",)) == 1, log
     sp.outstanding.discard(99)
-    sp.speak(4, "d", "en")
+    sp.speak(4, ["d"], "en")
     assert log.count(("connect",)) == 2 and ("close",) in log, log
-    sp.speak(5, "e", "en")
+    sp.speak(5, ["e"], "en")
     assert log.count(("connect",)) == 2, log
-    # written just now: the server may not have reloaded yet, so the start
-    # after that connects once more
-    with open(conf, "w") as f: f.write("DefaultModule c\n")
-    sp.speak(6, "f", "en")
-    assert log.count(("connect",)) == 3, log
-    os.utime(conf, (old + 2, old + 2))
-    sp.speak(7, "g", "en")
-    assert log.count(("connect",)) == 4, log
+    # LanguageDefaultModule: the server applies it itself, no reconnect,
+    # only the route is made again
+    server["per_lang"]["en"] = "espeak-ng"
+    sp.speak(6, ["f"], "en")
+    assert log.count(("connect",)) == 2, log
+    assert sp.routes["en"] == ("espeak-ng", "espeak-ng"), sp.routes
+    # a language without LanguageDefaultModule after it gets the default
+    log.clear()
+    sp.speak(61, ["f"], "ru")
+    assert ("module", "a") in log, log
+    assert sp.server_state()[1] == {"en": "espeak-ng", "ru": "a"}, sp.server_state()
+    # rarely checked: a change within the interval waits
+    host.CHECK_INTERVAL = 60
+    server["rate"] = "10"
+    sp.speak(7, ["g"], "en")
+    assert ("connect",) not in log, log
+    host.CHECK_INTERVAL = 0
+    reset_server()
+
+@quiet
+def test_fallback():
+    """The module the server gives has no voice for the language: one with
+    a voice for the exact language, then the base language, espeak last."""
+    reset_server()
+    sp = host.Speaker()
+    log.clear()
+    sp.speak(1, ["a"], "pt-BR")
+    assert ("module", "c") in log, log
+    assert sp.routes["pt-br"] == ("c", "a")
+    sp.speak(2, ["a"], "de")
+    assert sp.routes["de"] == ("b", "a"), sp.routes
+    sp.speak(3, ["a"], "ru")
+    # once a fallback was named, the connection names the module every time
+    assert ("module", "a") in log, log
+    del server["voices"]["b"]
+    sp2 = host.Speaker()
+    sp2.speak(4, ["a"], "de")
+    assert sp2.routes["de"] == ("espeak-ng", "a"), sp2.routes
+    # the server does not answer the probe: leave it to the server
+    class Broken(FakeClient):
+        def list_output_modules(self): raise OSError("gone")
+    fake.SSIPClient = Broken
+    try:
+        sp3 = host.Speaker()
+        sp3.speak(5, ["a"], "fr")
+        assert "fr" not in sp3.routes
+    finally:
+        fake.SSIPClient = FakeClient
+    reset_server()
 
 def test_server_crash():
     """The server dies with utterances in it: they come back as lost, and
@@ -150,7 +223,6 @@ def test_server_crash():
     try:
         host.WATCH_INTERVAL = 0.05
         sp = host.Speaker()
-        sp.stamp = host.config_stamp()
         held = []
         class Silent(FakeClient):
             def speak(self, text, callback=None, event_types=None):
