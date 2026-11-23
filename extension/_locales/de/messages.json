@@ -1,0 +1,115 @@
+{
+  "extName": {
+    "message": "Speech Dispatcher Reader"
+  },
+  "extDescription": {
+    "message": "Liest Webseiten über den Speech Dispatcher des Systems vor: die Stimme für jede Sprache kommt aus Ihren Spracheinstellungen."
+  },
+  "actionTitle": {
+    "message": "Vorlesen"
+  },
+  "cmdReadArticle": {
+    "message": "Den Artikel (oder die Auswahl) vorlesen"
+  },
+  "cmdPick": {
+    "message": "Den vorzulesenden Teil der Seite wählen"
+  },
+  "cmdPause": {
+    "message": "Anhalten oder fortsetzen"
+  },
+  "cmdStop": {
+    "message": "Vorlesen beenden"
+  },
+  "menuSelection": {
+    "message": "Vorlesen"
+  },
+  "menuFromHere": {
+    "message": "Ab hier vorlesen"
+  },
+  "menuArticle": {
+    "message": "Den Artikel vorlesen"
+  },
+  "menuPick": {
+    "message": "Auswählen, was vorgelesen wird…"
+  },
+  "cantRead": {
+    "message": "Diese Seite kann nicht vorgelesen werden: $ERR$",
+    "placeholders": {
+      "err": {
+        "content": "$1"
+      }
+    }
+  },
+  "nothingToRead": {
+    "message": "Hier gibt es nichts vorzulesen"
+  },
+  "speechFailed": {
+    "message": "Sprachausgabe fehlgeschlagen"
+  },
+  "pickHelp": {
+    "message": "Klick: diesen Teil vorlesen · Umschalt+Klick: ab hier vorlesen · Mausrad oder ↑↓: größer/kleiner · ←→: Nachbarn · Esc: abbrechen"
+  },
+  "playTitle": {
+    "message": "Ab hier vorlesen"
+  },
+  "popRead": {
+    "message": "Vorlesen"
+  },
+  "popReadTitle": {
+    "message": "Die Auswahl, sonst der Haupttext wie in der Leseansicht"
+  },
+  "popPause": {
+    "message": "Anhalten / fortsetzen"
+  },
+  "popStop": {
+    "message": "Beenden"
+  },
+  "popPick": {
+    "message": "Auswählen, was vorgelesen wird…"
+  },
+  "popPickTitle": {
+    "message": "Einen Teil der Seite mit der Maus oder der Tastatur wählen"
+  },
+  "popPage": {
+    "message": "Die ganze Seite vorlesen"
+  },
+  "popPageTitle": {
+    "message": "Der gesamte sichtbare Text, auch Menüs, Kopf- und Fußzeile"
+  },
+  "popLang": {
+    "message": "Sprache"
+  },
+  "popLangAuto": {
+    "message": "Automatisch"
+  },
+  "popSpeed": {
+    "message": "Tempo"
+  },
+  "popSpeedDefault": {
+    "message": "Tempo aus den Spracheinstellungen"
+  },
+  "popButtons": {
+    "message": "▶-Knopf neben Absätzen"
+  },
+  "popPin": {
+    "message": "Lesefeld auf der Seite: zeigen oder entfernen"
+  },
+  "panelMove": {
+    "message": "Ziehen zum Verschieben"
+  },
+  "panelClose": {
+    "message": "Das Feld in diesem Tab schließen"
+  },
+  "menuPanel": {
+    "message": "Das Lesefeld zeigen"
+  },
+  "popPanel": {
+    "message": "Lesefeld auf Seiten"
+  },
+  "popAllSites": {
+    "message": "Von selbst auf allen Seiten"
+  },
+  "popAllSitesTitle": {
+    "message": "Die ▶-Knöpfe und das Feld auf jeder Seite zeigen, ohne vorher dieses Fenster zu öffnen. Firefox fragt nach dem Recht, alle Seiten zu lesen; der Text geht trotzdem nur an den Speech Dispatcher auf diesem Computer."
+  }
+}
