@@ -1222,6 +1222,56 @@ browser.runtime.onMessage.addListener((msg) => {
   }
 });
 
+/*
+ * Firefox gives Alt+Shift+letter to the page's accesskeys before the
+ * extension's own keys: on Wikipedia Alt+Shift+R opened "Recent changes"
+ * (accesskey "r") instead of reading. Where the page has an accesskey on
+ * one of our keys, take the key here and ask for the command ourselves.
+ */
+let shortcuts = null;          // [{name, mods: "AS", key: "R"}]
+function shortcutOf(e) {
+  return (e.ctrlKey ? "C" : "") + (e.altKey ? "A" : "") + (e.shiftKey ? "S" : "") + (e.metaKey ? "M" : "");
+}
+async function loadShortcuts() {
+  try {
+    const all = await browser.runtime.sendMessage({type: "shortcuts"});
+    shortcuts = (all || []).map(({name, shortcut}) => {
+      const parts = shortcut.split("+");
+      const key = parts.pop();
+      const has = (m) => parts.some((p) => p === m);
+      return {name, key: key.toUpperCase(),
+              mods: (has("Ctrl") || has("MacCtrl") ? "C" : "") + (has("Alt") ? "A" : "") +
+                    (has("Shift") ? "S" : "") + (has("Command") ? "M" : "")};
+    }).filter((c) => /^[A-Z0-9]$/.test(c.key) && c.mods.includes("A"));
+  } catch (e) {
+    shortcuts = [];
+  }
+}
+function onShortcutKey(e) {
+  if (!shortcuts || !shortcuts.length || retired || !e.altKey || e.repeat)
+    return;
+  const m = /^(Key|Digit)([A-Z0-9])$/.exec(e.code);
+  if (!m)
+    return;
+  const mods = shortcutOf(e);
+  const c = shortcuts.find((s) => s.key === m[2] && s.mods === mods);
+  if (!c)
+    return;
+  const taken = [...document.querySelectorAll("[accesskey]")].some((el) =>
+    el.getAttribute("accesskey").toUpperCase().split(/\s+/).includes(c.key));
+  if (!taken)
+    return;                 // nothing in the page: Firefox sends the command
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  browser.runtime.sendMessage({type: "command", name: c.name}).catch(() => {});
+}
+if (window === window.top) {
+  loadShortcuts();
+  window.addEventListener("keydown", onShortcutKey, true);
+  // the user can change the keys in about:addons at any time
+  window.addEventListener("focus", loadShortcuts);
+}
+
 // the page goes away (a link, a reload): the paragraphs already in speechd
 // would be read on with no panel to stop them, and the other tabs would
 // show "reading" for good

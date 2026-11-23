@@ -173,6 +173,13 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return Promise.resolve({speakingTab, lastError, paused, you: tab});
   case "run":         // from the popup
     return runInTab(msg.tab, msg.action, {lang: msg.lang, on: msg.on});
+  case "shortcuts":   // the page's script: our keys, to win over accesskeys
+    return browser.commands.getAll().then((all) =>
+      all.filter((c) => c.shortcut).map((c) => ({name: c.name, shortcut: c.shortcut})));
+  case "command":     // one of our keys, taken from a page accesskey
+    if (tab !== null && sender.frameId === 0)
+      onCommand(String(msg.name), sender.tab);
+    return;
   }
 });
 
@@ -251,7 +258,7 @@ browser.menus.onClicked.addListener((info, tab) => {
   runInTab(tab.id, info.menuItemId === "read-selection" ? "selection" : info.menuItemId.replace(/^read-/, ""), extra);
 });
 
-browser.commands.onCommand.addListener(async (command, tab) => {
+async function onCommand(command, tab) {
   tab = tab || (await browser.tabs.query({active: true, currentWindow: true}))[0];
   if (!tab)
     return;
@@ -259,5 +266,7 @@ browser.commands.onCommand.addListener(async (command, tab) => {
     return stopAll();
   if (command === "pause")
     return runInTab(tab.id, "toggle-pause");
-  runInTab(tab.id, command === "read-article" ? "auto" : "pick-element");
-});
+  if (command === "read-article" || command === "pick-element")
+    runInTab(tab.id, command === "read-article" ? "auto" : "pick-element");
+}
+browser.commands.onCommand.addListener(onCommand);
